@@ -121,9 +121,7 @@ const PoolBillingSystem = ({
     if (quantity === 0 || processedClicks.current.has(clickId)) return;
 
     const stock = await getInventory();
-    if (!stock[item]) {
-      stock[item] = { available: 0, sold: 0 };
-    }
+    if (!stock[item]) stock[item] = { available: 0, sold: 0 };
 
     if (stock[item].available < quantity) {
       alert(
@@ -140,7 +138,6 @@ const PoolBillingSystem = ({
       return;
     }
 
-    // No state update here; just sync Firestore tables
     setActiveTables((prevTables) => {
       const updatedTables = prevTables.map((t) => (t.id === id ? { ...t } : t));
       saveTables(selectedDate, updatedTables, selectedLocation);
@@ -148,10 +145,7 @@ const PoolBillingSystem = ({
       return updatedTables;
     });
 
-    console.log(
-      `Processed ${quantity} ${item} for table ${id}, click ${clickId}`
-    );
-    processedClicks.current.add(clickId); // Mark this batch as processed
+    processedClicks.current.add(clickId);
     delete pendingUpdates.current[key];
   };
 
@@ -325,19 +319,19 @@ const PoolBillingSystem = ({
 
   const stopTable = (id) => {
     const tableToEdit = activeTables.find((t) => t.id === id);
-    if (!tableToEdit || tableToEdit.endTime) return; // ✅ Prevent double stop
+    if (!tableToEdit || tableToEdit.endTime) return;
 
     const endTime = new Date();
     const { totalAmount, duration } = calculateTotalAmount(
       tableToEdit,
       endTime
-    );
+    ); // Include existing orderedItems
 
     setEditData({
       ...tableToEdit,
       endTime,
+      totalAmount, // Initial totalAmount includes items (Step 3)
       duration,
-      totalAmount,
     });
     setIsEditModalOpen(true);
 
@@ -346,7 +340,7 @@ const PoolBillingSystem = ({
       phone: tableToEdit.phone,
       startTime: new Date(tableToEdit.startTime).toISOString().slice(0, 16),
       endTime: endTime.toISOString().slice(0, 16),
-      totalAmount,
+      totalAmount, // Set to Rs 23 with 1 Lays (Step 3)
     });
   };
 
@@ -367,12 +361,11 @@ const PoolBillingSystem = ({
 
     setEditData((prev) => {
       const updatedItems = [...prev.orderedItems, item];
-      const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
       const { totalAmount } = calculateTotalAmount(
         { ...prev, orderedItems: updatedItems },
-        endTime
+        prev.endTime
       );
-      editForm.setFieldsValue({ totalAmount });
+      editForm.setFieldsValue({ totalAmount }); // Update totalAmount in modal (Req 3)
       return { ...prev, orderedItems: updatedItems, totalAmount };
     });
 
@@ -383,10 +376,9 @@ const PoolBillingSystem = ({
         alert(`Sorry, ${item} is out of stock!`);
         setEditData((prev) => {
           const updatedItems = prev.orderedItems.filter((i) => i !== item);
-          const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
           const { totalAmount } = calculateTotalAmount(
             { ...prev, orderedItems: updatedItems },
-            endTime
+            prev.endTime
           );
           editForm.setFieldsValue({ totalAmount });
           return { ...prev, orderedItems: updatedItems, totalAmount };
@@ -400,10 +392,9 @@ const PoolBillingSystem = ({
         alert(`Failed to update inventory for ${item}`);
         setEditData((prev) => {
           const updatedItems = prev.orderedItems.filter((i) => i !== item);
-          const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
           const { totalAmount } = calculateTotalAmount(
             { ...prev, orderedItems: updatedItems },
-            endTime
+            prev.endTime
           );
           editForm.setFieldsValue({ totalAmount });
           return { ...prev, orderedItems: updatedItems, totalAmount };
@@ -411,6 +402,17 @@ const PoolBillingSystem = ({
         delete pendingUpdates.current[key];
         return;
       }
+
+      setActiveTables((prevTables) => {
+        const updatedTables = prevTables.map((t) =>
+          t.id === editData.id
+            ? { ...t, orderedItems: [...t.orderedItems, item] }
+            : t
+        );
+        if (isAuthenticated)
+          saveTables(selectedDate, updatedTables, selectedLocation);
+        return updatedTables;
+      });
 
       processedClicks.current.add(clickId);
       delete pendingUpdates.current[key];
@@ -514,16 +516,36 @@ const PoolBillingSystem = ({
     const clickId = `${key}-${Date.now()}`;
     pendingUpdates.current[key] = (pendingUpdates.current[key] || 0) + 1;
 
-    setEditData((prev) => {
-      if (!prev || prev.id !== id) return prev;
-      const updatedItems = [...prev.orderedItems, item];
-      const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
-      const { totalAmount } = calculateTotalAmount(
-        { ...prev, orderedItems: updatedItems },
-        endTime
-      );
-      editForm.setFieldsValue({ totalAmount });
-      return { ...prev, orderedItems: updatedItems, totalAmount };
+    let updatedItems;
+
+    setActiveTables((prevTables) => {
+      const updatedTables = prevTables.map((t) => {
+        if (t.id !== id) return t;
+        updatedItems = [...t.orderedItems, item];
+        console.log(
+          `Immediate update for ${id}, click ${clickId}:`,
+          updatedItems
+        );
+        return { ...t, orderedItems: updatedItems };
+      });
+      if (isEditModalOpen) {
+        setEditData((prev) => {
+          if (!prev || prev.id !== id) return prev;
+          const updatedItemsLocal = [...prev.orderedItems, item];
+          const { totalAmount } = calculateTotalAmount(
+            { ...prev, orderedItems: updatedItemsLocal },
+            prev.endTime
+          );
+          editForm.setFieldsValue({ totalAmount }); // Update modal UI (Step 4: Rs 63)
+          console.log(
+            `Immediate editData update for ${id}, click ${clickId}:`,
+            updatedItemsLocal,
+            `Total Amount: ${totalAmount}`
+          );
+          return { ...prev, orderedItems: updatedItemsLocal, totalAmount };
+        });
+      }
+      return updatedTables;
     });
 
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
@@ -537,18 +559,40 @@ const PoolBillingSystem = ({
     const clickId = `${key}-${Date.now()}`;
     pendingUpdates.current[key] = (pendingUpdates.current[key] || 0) - 1;
 
-    setEditData((prev) => {
-      if (!prev || prev.id !== id) return prev;
-      const updatedItems = prev.orderedItems.filter(
-        (_, idx) => idx !== prev.orderedItems.lastIndexOf(item)
-      );
-      const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
-      const { totalAmount } = calculateTotalAmount(
-        { ...prev, orderedItems: updatedItems },
-        endTime
-      );
-      editForm.setFieldsValue({ totalAmount });
-      return { ...prev, orderedItems: updatedItems, totalAmount };
+    let updatedItems;
+
+    setActiveTables((prevTables) => {
+      const updatedTables = prevTables.map((t) => {
+        if (t.id !== id) return t;
+        updatedItems = [...t.orderedItems];
+        const index = updatedItems.lastIndexOf(item);
+        if (index !== -1) updatedItems.splice(index, 1);
+        console.log(
+          `Immediate decrease for ${id}, click ${clickId}:`,
+          updatedItems
+        );
+        return { ...t, orderedItems: updatedItems };
+      });
+      if (isEditModalOpen) {
+        setEditData((prev) => {
+          if (!prev || prev.id !== id) return prev;
+          const updatedItemsLocal = prev.orderedItems.filter(
+            (_, idx) => idx !== prev.orderedItems.lastIndexOf(item)
+          );
+          const { totalAmount } = calculateTotalAmount(
+            { ...prev, orderedItems: updatedItemsLocal },
+            prev.endTime
+          );
+          editForm.setFieldsValue({ totalAmount });
+          console.log(
+            `Immediate editData decrease for ${id}, click ${clickId}:`,
+            updatedItemsLocal,
+            `Total Amount: ${totalAmount}`
+          );
+          return { ...prev, orderedItems: updatedItemsLocal, totalAmount };
+        });
+      }
+      return updatedTables;
     });
 
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
@@ -567,64 +611,44 @@ const PoolBillingSystem = ({
     pendingUpdates.current[key] =
       (pendingUpdates.current[key] || 0) - itemCount;
 
-    setEditData((prev) => {
-      if (!prev || prev.id !== id) return prev;
-      const updatedItems = prev.orderedItems.filter(
-        (item) => item !== itemToRemove
-      );
-      const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
-      const { totalAmount } = calculateTotalAmount(
-        { ...prev, orderedItems: updatedItems },
-        endTime
-      );
-      editForm.setFieldsValue({ totalAmount });
-      return { ...prev, orderedItems: updatedItems, totalAmount };
+    let updatedItems;
+
+    setActiveTables((prevTables) => {
+      const updatedTables = prevTables.map((t) => {
+        if (t.id !== id) return t;
+        updatedItems = t.orderedItems.filter((item) => item !== itemToRemove);
+        console.log(
+          `Immediate remove all ${itemToRemove} for ${id}, click ${clickId}:`,
+          updatedItems
+        );
+        return { ...t, orderedItems: updatedItems };
+      });
+      if (isEditModalOpen) {
+        setEditData((prev) => {
+          if (!prev || prev.id !== id) return prev;
+          const updatedItemsLocal = prev.orderedItems.filter(
+            (item) => item !== itemToRemove
+          );
+          const { totalAmount } = calculateTotalAmount(
+            { ...prev, orderedItems: updatedItemsLocal },
+            prev.endTime
+          );
+          editForm.setFieldsValue({ totalAmount });
+          console.log(
+            `Immediate editData remove all ${itemToRemove} for ${id}, click ${clickId}:`,
+            updatedItemsLocal,
+            `Total Amount: ${totalAmount}`
+          );
+          return { ...prev, orderedItems: updatedItemsLocal, totalAmount };
+        });
+      }
+      return updatedTables;
     });
 
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
     pendingUpdates.current[`timeout-${key}`] = setTimeout(() => {
       processPendingUpdates(id, itemToRemove, clickId);
     }, 500);
-  };
-
-  const updateTable = (values) => {
-    setActiveTables((prevTables) =>
-      prevTables.map((t) => {
-        if (t.id !== editData.id) return t;
-
-        const newEndTime = values.endTime
-          ? new Date(values.endTime)
-          : editData.endTime
-          ? new Date(editData.endTime)
-          : new Date();
-        const updatedOrderedItems = editData.orderedItems;
-        const { totalAmount, duration } = calculateTotalAmount(
-          { ...t, orderedItems: updatedOrderedItems },
-          newEndTime
-        );
-
-        editForm.setFieldsValue({ totalAmount });
-
-        const cashAmount = parseFloat(values.cashAmount) || 0;
-        const onlineAmount = parseFloat(values.onlineAmount) || 0;
-
-        return {
-          ...t,
-          name: values.name || t.name,
-          phone: values.phone || t.phone,
-          endTime: newEndTime,
-          duration,
-          orderedItems: updatedOrderedItems,
-          totalAmount,
-          isClosed: true,
-          cashAmount, // Store cash amount
-          onlineAmount, // Store online amount
-        };
-      })
-    );
-    setIsEditModalOpen(false);
-    if (isAuthenticated)
-      saveTables(selectedDate, activeTables, selectedLocation);
   };
 
   const handleEndTimeChange = (e) => {
@@ -635,9 +659,43 @@ const PoolBillingSystem = ({
       : new Date();
     setEditData((prev) => {
       const { totalAmount } = calculateTotalAmount(prev, newEndTime);
-      editForm.setFieldsValue({ totalAmount });
+      editForm.setFieldsValue({ totalAmount }); // Update totalAmount in modal
       return { ...prev, endTime: newEndTime, totalAmount };
     });
+  };
+
+  const updateTable = (values) => {
+    setActiveTables((prevTables) =>
+      prevTables.map((t) => {
+        if (t.id !== editData.id) return t;
+
+        const newEndTime = values.endTime
+          ? new Date(values.endTime)
+          : new Date();
+        const newDuration = Math.max(
+          Math.round((newEndTime - new Date(t.startTime)) / 60000),
+          0
+        );
+        const updatedOrderedItems = editData.orderedItems;
+        const { totalAmount } = calculateTotalAmount(
+          { ...t, orderedItems: updatedOrderedItems },
+          newEndTime
+        );
+
+        return {
+          ...t,
+          name: values.name || t.name,
+          phone: values.phone || t.phone,
+          endTime: newEndTime,
+          duration: newDuration,
+          orderedItems: updatedOrderedItems,
+          totalAmount,
+          isClosed: true,
+        };
+      })
+    );
+
+    setIsEditModalOpen(false);
   };
 
   const handleEdit = (record) => {
@@ -649,7 +707,7 @@ const PoolBillingSystem = ({
       phone: record.phone,
       startTime: new Date(record.startTime).toISOString().slice(0, 16),
       endTime: record.endTime
-        ? moment(record.endTime).format("YYYY-MM-DDTHH:mm")
+        ? moment(record.endTime).toISOString().slice(0, 16)
         : null,
       totalAmount: record.totalAmount,
     });
@@ -799,6 +857,13 @@ const PoolBillingSystem = ({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isDropdownOpen]);
+
+  useEffect(() => {
+    if (isEditModalOpen && editData) {
+      const { totalAmount } = calculateTotalAmount(editData, editData.endTime);
+      editForm.setFieldsValue({ totalAmount });
+    }
+  }, [editData, isEditModalOpen]);
 
   const config =
     selectedLocation === LOCATIONS.OLD_HOUSE
