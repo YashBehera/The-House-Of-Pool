@@ -235,6 +235,40 @@ const PoolBillingSystem = ({
     return stock[item]?.available > 0;
   };
 
+  const calculateTotalAmount = (table, endTime) => {
+    const startTime = new Date(table.startTime);
+    // Use provided endTime, table's endTime, or current time as fallback
+    const effectiveEndTime = endTime
+      ? new Date(endTime)
+      : table.endTime
+      ? new Date(table.endTime)
+      : new Date();
+    const duration = Math.max(
+      Math.round((effectiveEndTime - startTime) / 60000),
+      0
+    );
+    const totalItemCost = table.orderedItems.reduce(
+      (sum, item) => sum + ITEM_PRICES[item],
+      0
+    );
+    let totalAmount = totalItemCost;
+
+    if (table.gameType === "Turf") {
+      totalAmount += Math.round((duration / 60) * TURF_RATE_PER_HOUR);
+    } else if (table.gameType === "8-ball Pool") {
+      if (table.location === LOCATIONS.OLD_HOUSE) {
+        const hourlyRate = OLD_HOUSE_POOL_RATES[table.table] || 0; // Use table-specific rate or 0 if undefined
+        totalAmount += Math.round((duration / 60) * hourlyRate);
+      } else {
+        totalAmount += Math.round(duration * POOL_RATE_PER_MIN);
+      }
+    } else {
+      totalAmount += Math.round(duration * POOL_RATE_PER_MIN); // Default for other game types (PS, Table Tennis)
+    }
+
+    return { totalAmount: Math.round(totalAmount), duration };
+  };
+
   const startTable = (values) => {
     if (!selectedTable) return;
 
@@ -272,6 +306,8 @@ const PoolBillingSystem = ({
       gameType,
       isClosed: false, // Ensure closed tables don't get modified
       location: selectedLocation, // Add location to entry
+      cashAmount: 0, // New field for cash payment
+      onlineAmount: 0, // New field for online payment
     };
 
     setActiveTables((prevTables) => {
@@ -291,8 +327,27 @@ const PoolBillingSystem = ({
     const tableToEdit = activeTables.find((t) => t.id === id);
     if (!tableToEdit || tableToEdit.endTime) return; // ✅ Prevent double stop
 
-    setEditData({ ...tableToEdit, endTime: new Date() }); // ✅ Pre-fill modal with current time
-    setIsEditModalOpen(true); // ✅ Open edit modal
+    const endTime = new Date();
+    const { totalAmount, duration } = calculateTotalAmount(
+      tableToEdit,
+      endTime
+    );
+
+    setEditData({
+      ...tableToEdit,
+      endTime,
+      duration,
+      totalAmount,
+    });
+    setIsEditModalOpen(true);
+
+    editForm.setFieldsValue({
+      name: tableToEdit.name,
+      phone: tableToEdit.phone,
+      startTime: new Date(tableToEdit.startTime).toISOString().slice(0, 16),
+      endTime: endTime.toISOString().slice(0, 16),
+      totalAmount,
+    });
   };
 
   const getEditMenu = () => (
@@ -307,73 +362,29 @@ const PoolBillingSystem = ({
 
   const addItemToEdit = async (item) => {
     const key = `${editData.id}-${item}`;
-    const clickId = `${key}-${Date.now()}`; // Unique ID per click batch
-    pendingUpdates.current[key] = (pendingUpdates.current[key] || 0) + 1; // Queue addition
-
-    // Immediate UI update
-    setActiveTables((prevTables) => {
-      const updatedTables = prevTables.map((t) => {
-        if (t.id !== editData.id) return t;
-        const updatedItems = [...t.orderedItems, item];
-        console.log(
-          `Immediate addItemToEdit for ${editData.id}, click ${clickId}:`,
-          updatedItems
-        );
-        const newTotalAmount = Math.round(
-          Number(t.totalAmount) + ITEM_PRICES[item]
-        );
-        return {
-          ...t,
-          orderedItems: updatedItems,
-          totalAmount: newTotalAmount,
-        };
-      });
-      return updatedTables; // Don’t save to Firestore yet
-    });
+    const clickId = `${key}-${Date.now()}`;
+    pendingUpdates.current[key] = (pendingUpdates.current[key] || 0) + 1;
 
     setEditData((prev) => {
       const updatedItems = [...prev.orderedItems, item];
-      console.log(
-        `Immediate editData add for ${editData.id}, click ${clickId}:`,
-        updatedItems
-      );
-      return {
-        ...prev,
-        orderedItems: updatedItems,
-        totalAmount: Math.round(Number(prev.totalAmount) + ITEM_PRICES[item]),
-      };
+      const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
+      const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, endTime);
+      editForm.setFieldsValue({ totalAmount });
+      return { ...prev, orderedItems: updatedItems, totalAmount };
     });
 
-    console.log(
-      `Queued 1 ${item} for table ${editData.id}, total pending: ${pendingUpdates.current[key]}, click ${clickId}`
-    );
-
-    // Debounce Firestore update
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
     pendingUpdates.current[`timeout-${key}`] = setTimeout(async () => {
       const canOrder = await canOrderItem(item);
       if (!canOrder) {
         alert(`Sorry, ${item} is out of stock!`);
-        // Rollback UI changes
-        setActiveTables((prevTables) =>
-          prevTables.map((t) => {
-            if (t.id !== editData.id) return t;
-            const updatedItems = t.orderedItems.filter((i) => i !== item);
-            const newTotalAmount = Math.round(
-              Number(t.totalAmount) - ITEM_PRICES[item]
-            );
-            return {
-              ...t,
-              orderedItems: updatedItems,
-              totalAmount: newTotalAmount,
-            };
-          })
-        );
-        setEditData((prev) => ({
-          ...prev,
-          orderedItems: prev.orderedItems.filter((i) => i !== item),
-          totalAmount: Math.round(Number(prev.totalAmount) - ITEM_PRICES[item]),
-        }));
+        setEditData((prev) => {
+          const updatedItems = prev.orderedItems.filter((i) => i !== item);
+          const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
+          const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, endTime);
+          editForm.setFieldsValue({ totalAmount });
+          return { ...prev, orderedItems: updatedItems, totalAmount };
+        });
         delete pendingUpdates.current[key];
         return;
       }
@@ -381,48 +392,22 @@ const PoolBillingSystem = ({
       const success = await updateInventory(item, -1);
       if (!success) {
         alert(`Failed to update inventory for ${item}`);
-        // Rollback UI changes
-        setActiveTables((prevTables) =>
-          prevTables.map((t) => {
-            if (t.id !== editData.id) return t;
-            const updatedItems = t.orderedItems.filter((i) => i !== item);
-            const newTotalAmount = Math.round(
-              Number(t.totalAmount) - ITEM_PRICES[item]
-            );
-            return {
-              ...t,
-              orderedItems: updatedItems,
-              totalAmount: newTotalAmount,
-            };
-          })
-        );
-        setEditData((prev) => ({
-          ...prev,
-          orderedItems: prev.orderedItems.filter((i) => i !== item),
-          totalAmount: Math.round(Number(prev.totalAmount) - ITEM_PRICES[item]),
-        }));
+        setEditData((prev) => {
+          const updatedItems = prev.orderedItems.filter((i) => i !== item);
+          const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
+          const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, endTime);
+          editForm.setFieldsValue({ totalAmount });
+          return { ...prev, orderedItems: updatedItems, totalAmount };
+        });
         delete pendingUpdates.current[key];
         return;
       }
 
-      // Sync Firestore tables
-      setActiveTables((prevTables) => {
-        const updatedTables = prevTables.map((t) =>
-          t.id === editData.id ? { ...t } : t
-        );
-        if (isAuthenticated)
-          saveTables(selectedDate, updatedTables, selectedLocation);
-        console.log(`Synced 1 ${item} for table ${editData.id} with Firestore`);
-        return updatedTables;
-      });
-
-      console.log(
-        `Processed 1 ${item} for table ${editData.id}, click ${clickId}`
-      );
       processedClicks.current.add(clickId);
       delete pendingUpdates.current[key];
     }, 500);
   };
+
   // ✅ Aggregate ordered items for display
   const aggregateItems = (items) => {
     const itemCounts = items.reduce((acc, item) => {
@@ -517,49 +502,18 @@ const PoolBillingSystem = ({
 
   const increaseItem = async (id, item) => {
     const key = `${id}-${item}`;
-    const clickId = `${key}-${Date.now()}`; // Unique ID per click batch
+    const clickId = `${key}-${Date.now()}`;
     pendingUpdates.current[key] = (pendingUpdates.current[key] || 0) + 1;
-
-    // Immediate UI update (only once per click)
-    setActiveTables((prevTables) => {
-      const updatedTables = prevTables.map((t) => {
-        if (t.id !== id) return t;
-        const updatedItems = [...t.orderedItems, item];
-        console.log(
-          `Immediate update for ${id}, click ${clickId}:`,
-          updatedItems
-        );
-        const newTotalAmount = Math.round(
-          Number(t.totalAmount) + ITEM_PRICES[item]
-        );
-        return {
-          ...t,
-          orderedItems: updatedItems,
-          totalAmount: newTotalAmount,
-        };
-      });
-      return updatedTables; // Don’t save to Firestore yet
-    });
 
     setEditData((prev) => {
       if (!prev || prev.id !== id) return prev;
       const updatedItems = [...prev.orderedItems, item];
-      console.log(
-        `Immediate editData update for ${id}, click ${clickId}:`,
-        updatedItems
-      );
-      return {
-        ...prev,
-        orderedItems: updatedItems,
-        totalAmount: Math.round(Number(prev.totalAmount) + ITEM_PRICES[item]),
-      };
+      const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
+      const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, endTime);
+      editForm.setFieldsValue({ totalAmount });
+      return { ...prev, orderedItems: updatedItems, totalAmount };
     });
 
-    console.log(
-      `Queued 1 ${item} for table ${id}, total pending: ${pendingUpdates.current[key]}, click ${clickId}`
-    );
-
-    // Debounce Firestore update
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
     pendingUpdates.current[`timeout-${key}`] = setTimeout(() => {
       processPendingUpdates(id, item, clickId);
@@ -568,53 +522,18 @@ const PoolBillingSystem = ({
 
   const decreaseItem = async (id, item) => {
     const key = `${id}-${item}`;
-    const clickId = `${key}-${Date.now()}`; // Unique ID per click batch
-    pendingUpdates.current[key] = (pendingUpdates.current[key] || 0) - 1; // Decrease count
-
-    // Immediate UI update (only once per click)
-    setActiveTables((prevTables) => {
-      const updatedTables = prevTables.map((t) => {
-        if (t.id !== id) return t;
-        const updatedItems = [...t.orderedItems];
-        const index = updatedItems.lastIndexOf(item);
-        if (index !== -1) updatedItems.splice(index, 1); // Remove last occurrence
-        console.log(
-          `Immediate decrease for ${id}, click ${clickId}:`,
-          updatedItems
-        );
-        const newTotalAmount = Math.round(
-          Number(t.totalAmount) - ITEM_PRICES[item]
-        );
-        return {
-          ...t,
-          orderedItems: updatedItems,
-          totalAmount: newTotalAmount,
-        };
-      });
-      return updatedTables; // Don’t save to Firestore yet
-    });
+    const clickId = `${key}-${Date.now()}`;
+    pendingUpdates.current[key] = (pendingUpdates.current[key] || 0) - 1;
 
     setEditData((prev) => {
       if (!prev || prev.id !== id) return prev;
-      const updatedItems = prev.orderedItems.filter(
-        (_, idx) => idx !== prev.orderedItems.lastIndexOf(item)
-      );
-      console.log(
-        `Immediate editData decrease for ${id}, click ${clickId}:`,
-        updatedItems
-      );
-      return {
-        ...prev,
-        orderedItems: updatedItems,
-        totalAmount: Math.round(Number(prev.totalAmount) - ITEM_PRICES[item]),
-      };
+      const updatedItems = prev.orderedItems.filter((_, idx) => idx !== prev.orderedItems.lastIndexOf(item));
+      const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
+      const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, endTime);
+      editForm.setFieldsValue({ totalAmount });
+      return { ...prev, orderedItems: updatedItems, totalAmount };
     });
 
-    console.log(
-      `Queued -1 ${item} for table ${id}, total pending: ${pendingUpdates.current[key]}, click ${clickId}`
-    );
-
-    // Debounce Firestore update
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
     pendingUpdates.current[`timeout-${key}`] = setTimeout(() => {
       processPendingUpdates(id, item, clickId);
@@ -623,62 +542,20 @@ const PoolBillingSystem = ({
 
   const removeItem = async (id, itemToRemove) => {
     const key = `${id}-${itemToRemove}`;
-    const clickId = `${key}-${Date.now()}`; // Unique ID per click batch
-
-    // Calculate the total count of itemToRemove to remove all instances
+    const clickId = `${key}-${Date.now()}`;
     const currentTable = activeTables.find((t) => t.id === id);
-    const itemCount =
-      currentTable?.orderedItems.filter((item) => item === itemToRemove)
-        .length || 0;
-    pendingUpdates.current[key] =
-      (pendingUpdates.current[key] || 0) - itemCount; // Queue removal of all instances
-
-    // Immediate UI update: Remove all instances of itemToRemove
-    setActiveTables((prevTables) => {
-      const updatedTables = prevTables.map((t) => {
-        if (t.id !== id) return t;
-        const updatedItems = t.orderedItems.filter(
-          (item) => item !== itemToRemove
-        ); // Remove all occurrences
-        console.log(
-          `Immediate remove all ${itemToRemove} for ${id}, click ${clickId}:`,
-          updatedItems
-        );
-        const totalDeduction = itemCount * ITEM_PRICES[itemToRemove];
-        const newTotalAmount = Math.round(
-          Number(t.totalAmount) - totalDeduction
-        );
-        return {
-          ...t,
-          orderedItems: updatedItems,
-          totalAmount: newTotalAmount,
-        };
-      });
-      return updatedTables; // Don’t save to Firestore yet
-    });
+    const itemCount = currentTable?.orderedItems.filter((item) => item === itemToRemove).length || 0;
+    pendingUpdates.current[key] = (pendingUpdates.current[key] || 0) - itemCount;
 
     setEditData((prev) => {
       if (!prev || prev.id !== id) return prev;
-      const updatedItems = prev.orderedItems.filter(
-        (item) => item !== itemToRemove
-      ); // Remove all occurrences
-      console.log(
-        `Immediate editData remove all ${itemToRemove} for ${id}, click ${clickId}:`,
-        updatedItems
-      );
-      const totalDeduction = itemCount * ITEM_PRICES[itemToRemove];
-      return {
-        ...prev,
-        orderedItems: updatedItems,
-        totalAmount: Math.round(Number(prev.totalAmount) - totalDeduction),
-      };
+      const updatedItems = prev.orderedItems.filter((item) => item !== itemToRemove);
+      const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
+      const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, endTime);
+      editForm.setFieldsValue({ totalAmount });
+      return { ...prev, orderedItems: updatedItems, totalAmount };
     });
 
-    console.log(
-      `Queued -${itemCount} ${itemToRemove} for table ${id}, total pending: ${pendingUpdates.current[key]}, click ${clickId}`
-    );
-
-    // Debounce Firestore update
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
     pendingUpdates.current[`timeout-${key}`] = setTimeout(() => {
       processPendingUpdates(id, itemToRemove, clickId);
@@ -690,48 +567,38 @@ const PoolBillingSystem = ({
       prevTables.map((t) => {
         if (t.id !== editData.id) return t;
 
-        const newEndTime = values.endTime
-          ? new Date(values.endTime)
-          : t.endTime
-          ? new Date(t.endTime)
-          : new Date(); // Default to current time if endTime is null
-        const newDuration = Math.max(
-          Math.round((newEndTime - new Date(t.startTime)) / 60000),
-          0
+        const newEndTime = values.endTime ? new Date(values.endTime) : editData.endTime ? new Date(editData.endTime) : new Date();
+        const updatedOrderedItems = editData.orderedItems;
+        const { totalAmount, duration } = calculateTotalAmount(
+          { ...t, orderedItems: updatedOrderedItems },
+          newEndTime
         );
-        const updatedOrderedItems = values.orderedItems ?? t.orderedItems;
-        const totalItemCost = updatedOrderedItems.reduce(
-          (sum, item) => sum + ITEM_PRICES[item],
-          0
-        );
-        let newTotalAmount = totalItemCost;
 
-        if (t.gameType === "Turf") {
-          newTotalAmount += Math.round((newDuration / 60) * TURF_RATE_PER_HOUR);
-        } else if (t.gameType === "8-ball Pool") {
-          if (t.location === LOCATIONS.OLD_HOUSE) {
-            const hourlyRate = OLD_HOUSE_POOL_RATES[t.table] || 0;
-            newTotalAmount += Math.round((newDuration / 60) * hourlyRate);
-          } else {
-            newTotalAmount += Math.round(newDuration * POOL_RATE_PER_MIN);
-          }
-        } else {
-          newTotalAmount += Math.round(newDuration * POOL_RATE_PER_MIN);
-        }
+        editForm.setFieldsValue({ totalAmount });
 
         return {
           ...t,
           name: values.name || t.name,
           phone: values.phone || t.phone,
           endTime: newEndTime,
-          duration: newDuration,
+          duration,
           orderedItems: updatedOrderedItems,
-          totalAmount: Math.round(newTotalAmount),
+          totalAmount,
           isClosed: true,
         };
       })
     );
     setIsEditModalOpen(false);
+    if (isAuthenticated) saveTables(selectedDate, activeTables, selectedLocation);
+  };
+
+  const handleEndTimeChange = (e) => {
+    const newEndTime = e.target.value ? new Date(e.target.value) : editData.endTime ? new Date(editData.endTime) : new Date();
+    setEditData((prev) => {
+      const { totalAmount } = calculateTotalAmount(prev, newEndTime);
+      editForm.setFieldsValue({ totalAmount });
+      return { ...prev, endTime: newEndTime, totalAmount };
+    });
   };
 
   const handleEdit = (record) => {
@@ -742,8 +609,8 @@ const PoolBillingSystem = ({
       name: record.name,
       phone: record.phone,
       startTime: new Date(record.startTime).toISOString().slice(0, 16),
-      endTime: record.endTime, // ✅ Set the default value correctly
-      orderedItems: [...record.orderedItems],
+      endTime: record.endTime ? moment(record.endTime).format("YYYY-MM-DDTHH:mm") : null,
+      totalAmount: record.totalAmount,
     });
   };
 
@@ -1542,6 +1409,20 @@ const PoolBillingSystem = ({
               render: (a) => (a ? Math.round(a) : "—"), // Ensuring integer display,
             },
             {
+              title: "Cash (Rs)",
+              dataIndex: "cashAmount",
+              key: "cashAmount",
+              render: (cash) =>
+                cash !== null && cash !== undefined ? cash : "—",
+            },
+            {
+              title: "Online (Rs)",
+              dataIndex: "onlineAmount",
+              key: "onlineAmount",
+              render: (online) =>
+                online !== null && online !== undefined ? online : "—",
+            },
+            {
               title: "Actions",
               key: "actions",
               render: (_, record) =>
@@ -1668,7 +1549,7 @@ const PoolBillingSystem = ({
 
             {/* Only Allow Editing Closing Time */}
             <Form.Item name="endTime" label="Closing Time">
-              <Input type="datetime-local" />
+              <Input type="datetime-local" onChange={handleEndTimeChange} />
             </Form.Item>
 
             {/* Ordered Items List with Remove Button */}
@@ -1719,6 +1600,55 @@ const PoolBillingSystem = ({
             <Dropdown overlay={getEditMenu()} trigger={["click"]}>
               <Button type="default">Add Item</Button>
             </Dropdown>
+
+            <Form.Item name="totalAmount" label="Total Amount (Rs)">
+              <Input disabled />
+            </Form.Item>
+            <Form.Item
+              name="cashAmount"
+              label="Cash Received (Rs)"
+              rules={[
+                { required: true, message: "Please enter cash amount" },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    const total = editData?.totalAmount || 0;
+                    const cash = parseFloat(value) || 0;
+                    const online =
+                      parseFloat(getFieldValue("onlineAmount")) || 0;
+                    if (cash + online > total) {
+                      return Promise.reject(
+                        new Error("Cash + Online cannot exceed total amount")
+                      );
+                    }
+                    return Promise.resolve();
+                  },
+                }),
+              ]}
+            >
+              <Input type="number" min={0} step={0.01} />
+            </Form.Item>
+            <Form.Item
+              name="onlineAmount"
+              label="Online Received (Rs)"
+              rules={[
+                { required: true, message: "Please enter online amount" },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    const total = editData?.totalAmount || 0;
+                    const cash = parseFloat(getFieldValue("cashAmount")) || 0;
+                    const online = parseFloat(value) || 0;
+                    if (cash + online > total) {
+                      return Promise.reject(
+                        new Error("Cash + Online cannot exceed total amount")
+                      );
+                    }
+                    return Promise.resolve();
+                  },
+                }),
+              ]}
+            >
+              <Input type="number" min={0} step={0.01} />
+            </Form.Item>
 
             <Form.Item>
               <Button type="primary" htmlType="submit">
