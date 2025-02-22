@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Table, Card, Typography, Input, Statistic } from "antd";
+import { Table, Card, Typography, Input, Statistic,Row, Col} from "antd";
 import { SearchOutlined, MoneyCollectOutlined } from "@ant-design/icons";
 import { ITEM_PRICES } from "./PoolBillingSystem";
 import Navbar from "./Navbar";
@@ -27,6 +27,8 @@ const SalesReport = ({
       ...table,
       startTime: table.startTime ? moment(table.startTime).toDate() : null,
       endTime: table.endTime ? moment(table.endTime).toDate() : null,
+      cashAmount: table.cashAmount || 0, // Ensure defaults
+      onlineAmount: table.onlineAmount || 0,
     }));
   };
 
@@ -108,6 +110,15 @@ const SalesReport = ({
   );
   const totalRevenue = totalGameRevenue + foodItemsRevenue;
 
+  const cashRevenue = activeTables.reduce(
+    (sum, entry) => sum + (Number(entry.cashAmount) || 0),
+    0
+  );
+  const onlineRevenue = activeTables.reduce(
+    (sum, entry) => sum + (Number(entry.onlineAmount) || 0),
+    0
+  );
+
   // Search filter
   const filteredItems = sortedItemSales.filter(({ itemName }) =>
     itemName.toLowerCase().includes(searchText.toLowerCase())
@@ -179,21 +190,56 @@ const SalesReport = ({
         </Title>
 
         {/* Total Revenue */}
-        <Card
-          style={{
-            marginBottom: "20px",
-            backgroundColor: "#f6ffed",
-            borderLeft: "5px solid #52c41a",
-          }}
-        >
-          <Statistic
-            title="Total Revenue"
-            value={totalRevenue.toFixed(2)}
-            prefix={<MoneyCollectOutlined />}
-            suffix="Rs"
-            valueStyle={{ color: "#52c41a", fontSize: "20px" }}
-          />
-        </Card>
+        <Row gutter={16} style={{ marginBottom: "20px" }}>
+          <Col span={8}>
+            <Card
+              style={{
+                backgroundColor: "#f6ffed",
+                borderLeft: "5px solid #52c41a",
+              }}
+            >
+              <Statistic
+                title="Total Revenue"
+                value={totalRevenue.toFixed(2)}
+                prefix={<MoneyCollectOutlined />}
+                suffix="Rs"
+                valueStyle={{ color: "#52c41a", fontSize: "20px" }}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card
+              style={{
+                backgroundColor: "#e6f7ff",
+                borderLeft: "5px solid #1890ff",
+              }}
+            >
+              <Statistic
+                title="Cash Revenue"
+                value={cashRevenue.toFixed(2)}
+                prefix={<MoneyCollectOutlined />}
+                suffix="Rs"
+                valueStyle={{ color: "#1890ff", fontSize: "20px" }}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card
+              style={{
+                backgroundColor: "#fff1f0",
+                borderLeft: "5px solid #ff4d4f",
+              }}
+            >
+              <Statistic
+                title="Online Revenue"
+                value={onlineRevenue.toFixed(2)}
+                prefix={<MoneyCollectOutlined />}
+                suffix="Rs"
+                valueStyle={{ color: "#ff4d4f", fontSize: "20px" }}
+              />
+            </Card>
+          </Col>
+        </Row>
 
         {/* Search Bar */}
         <Input
