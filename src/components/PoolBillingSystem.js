@@ -368,7 +368,10 @@ const PoolBillingSystem = ({
     setEditData((prev) => {
       const updatedItems = [...prev.orderedItems, item];
       const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
-      const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, endTime);
+      const { totalAmount } = calculateTotalAmount(
+        { ...prev, orderedItems: updatedItems },
+        endTime
+      );
       editForm.setFieldsValue({ totalAmount });
       return { ...prev, orderedItems: updatedItems, totalAmount };
     });
@@ -381,7 +384,10 @@ const PoolBillingSystem = ({
         setEditData((prev) => {
           const updatedItems = prev.orderedItems.filter((i) => i !== item);
           const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
-          const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, endTime);
+          const { totalAmount } = calculateTotalAmount(
+            { ...prev, orderedItems: updatedItems },
+            endTime
+          );
           editForm.setFieldsValue({ totalAmount });
           return { ...prev, orderedItems: updatedItems, totalAmount };
         });
@@ -395,7 +401,10 @@ const PoolBillingSystem = ({
         setEditData((prev) => {
           const updatedItems = prev.orderedItems.filter((i) => i !== item);
           const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
-          const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, endTime);
+          const { totalAmount } = calculateTotalAmount(
+            { ...prev, orderedItems: updatedItems },
+            endTime
+          );
           editForm.setFieldsValue({ totalAmount });
           return { ...prev, orderedItems: updatedItems, totalAmount };
         });
@@ -509,7 +518,10 @@ const PoolBillingSystem = ({
       if (!prev || prev.id !== id) return prev;
       const updatedItems = [...prev.orderedItems, item];
       const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
-      const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, endTime);
+      const { totalAmount } = calculateTotalAmount(
+        { ...prev, orderedItems: updatedItems },
+        endTime
+      );
       editForm.setFieldsValue({ totalAmount });
       return { ...prev, orderedItems: updatedItems, totalAmount };
     });
@@ -527,9 +539,14 @@ const PoolBillingSystem = ({
 
     setEditData((prev) => {
       if (!prev || prev.id !== id) return prev;
-      const updatedItems = prev.orderedItems.filter((_, idx) => idx !== prev.orderedItems.lastIndexOf(item));
+      const updatedItems = prev.orderedItems.filter(
+        (_, idx) => idx !== prev.orderedItems.lastIndexOf(item)
+      );
       const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
-      const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, endTime);
+      const { totalAmount } = calculateTotalAmount(
+        { ...prev, orderedItems: updatedItems },
+        endTime
+      );
       editForm.setFieldsValue({ totalAmount });
       return { ...prev, orderedItems: updatedItems, totalAmount };
     });
@@ -544,14 +561,22 @@ const PoolBillingSystem = ({
     const key = `${id}-${itemToRemove}`;
     const clickId = `${key}-${Date.now()}`;
     const currentTable = activeTables.find((t) => t.id === id);
-    const itemCount = currentTable?.orderedItems.filter((item) => item === itemToRemove).length || 0;
-    pendingUpdates.current[key] = (pendingUpdates.current[key] || 0) - itemCount;
+    const itemCount =
+      currentTable?.orderedItems.filter((item) => item === itemToRemove)
+        .length || 0;
+    pendingUpdates.current[key] =
+      (pendingUpdates.current[key] || 0) - itemCount;
 
     setEditData((prev) => {
       if (!prev || prev.id !== id) return prev;
-      const updatedItems = prev.orderedItems.filter((item) => item !== itemToRemove);
+      const updatedItems = prev.orderedItems.filter(
+        (item) => item !== itemToRemove
+      );
       const endTime = prev.endTime ? new Date(prev.endTime) : new Date();
-      const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, endTime);
+      const { totalAmount } = calculateTotalAmount(
+        { ...prev, orderedItems: updatedItems },
+        endTime
+      );
       editForm.setFieldsValue({ totalAmount });
       return { ...prev, orderedItems: updatedItems, totalAmount };
     });
@@ -567,7 +592,11 @@ const PoolBillingSystem = ({
       prevTables.map((t) => {
         if (t.id !== editData.id) return t;
 
-        const newEndTime = values.endTime ? new Date(values.endTime) : editData.endTime ? new Date(editData.endTime) : new Date();
+        const newEndTime = values.endTime
+          ? new Date(values.endTime)
+          : editData.endTime
+          ? new Date(editData.endTime)
+          : new Date();
         const updatedOrderedItems = editData.orderedItems;
         const { totalAmount, duration } = calculateTotalAmount(
           { ...t, orderedItems: updatedOrderedItems },
@@ -575,6 +604,9 @@ const PoolBillingSystem = ({
         );
 
         editForm.setFieldsValue({ totalAmount });
+
+        const cashAmount = parseFloat(values.cashAmount) || 0;
+        const onlineAmount = parseFloat(values.onlineAmount) || 0;
 
         return {
           ...t,
@@ -585,15 +617,22 @@ const PoolBillingSystem = ({
           orderedItems: updatedOrderedItems,
           totalAmount,
           isClosed: true,
+          cashAmount, // Store cash amount
+          onlineAmount, // Store online amount
         };
       })
     );
     setIsEditModalOpen(false);
-    if (isAuthenticated) saveTables(selectedDate, activeTables, selectedLocation);
+    if (isAuthenticated)
+      saveTables(selectedDate, activeTables, selectedLocation);
   };
 
   const handleEndTimeChange = (e) => {
-    const newEndTime = e.target.value ? new Date(e.target.value) : editData.endTime ? new Date(editData.endTime) : new Date();
+    const newEndTime = e.target.value
+      ? new Date(e.target.value)
+      : editData.endTime
+      ? new Date(editData.endTime)
+      : new Date();
     setEditData((prev) => {
       const { totalAmount } = calculateTotalAmount(prev, newEndTime);
       editForm.setFieldsValue({ totalAmount });
@@ -609,7 +648,9 @@ const PoolBillingSystem = ({
       name: record.name,
       phone: record.phone,
       startTime: new Date(record.startTime).toISOString().slice(0, 16),
-      endTime: record.endTime ? moment(record.endTime).format("YYYY-MM-DDTHH:mm") : null,
+      endTime: record.endTime
+        ? moment(record.endTime).format("YYYY-MM-DDTHH:mm")
+        : null,
       totalAmount: record.totalAmount,
     });
   };
@@ -1412,15 +1453,13 @@ const PoolBillingSystem = ({
               title: "Cash (Rs)",
               dataIndex: "cashAmount",
               key: "cashAmount",
-              render: (cash) =>
-                cash !== null && cash !== undefined ? cash : "—",
+              render: (a) => (a !== undefined ? Math.round(a) : "0"),
             },
             {
               title: "Online (Rs)",
               dataIndex: "onlineAmount",
               key: "onlineAmount",
-              render: (online) =>
-                online !== null && online !== undefined ? online : "—",
+              render: (a) => (a !== undefined ? Math.round(a) : "0"),
             },
             {
               title: "Actions",
