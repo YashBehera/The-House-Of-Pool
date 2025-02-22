@@ -682,6 +682,9 @@ const PoolBillingSystem = ({
           newEndTime
         );
 
+        const cashAmount = parseFloat(values.cashAmount) || 0;
+        const onlineAmount = parseFloat(values.onlineAmount) || 0;
+
         return {
           ...t,
           name: values.name || t.name,
@@ -690,6 +693,8 @@ const PoolBillingSystem = ({
           duration: newDuration,
           orderedItems: updatedOrderedItems,
           totalAmount,
+          cashAmount, // Store cash amount
+          onlineAmount, // Store online amount
           isClosed: true,
         };
       })
@@ -710,6 +715,8 @@ const PoolBillingSystem = ({
         ? moment(record.endTime).toISOString().slice(0, 16)
         : null,
       totalAmount: record.totalAmount,
+      cashAmount: record.cashAmount || 0, // Default to 0 if not set
+      onlineAmount: record.onlineAmount || 0, // Default to 0 if not set
     });
   };
 
@@ -798,6 +805,8 @@ const PoolBillingSystem = ({
               totalAmount: 0,
               isClosed: false,
               location: selectedLocation,
+              cashAmount: 0,
+              onlineAmount: 0,
             });
           }
           setActiveTables(updatedTables);
@@ -1708,50 +1717,12 @@ const PoolBillingSystem = ({
             <Form.Item name="totalAmount" label="Total Amount (Rs)">
               <Input disabled />
             </Form.Item>
-            <Form.Item
-              name="cashAmount"
-              label="Cash Received (Rs)"
-              rules={[
-                { required: true, message: "Please enter cash amount" },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    const total = editData?.totalAmount || 0;
-                    const cash = parseFloat(value) || 0;
-                    const online =
-                      parseFloat(getFieldValue("onlineAmount")) || 0;
-                    if (cash + online > total) {
-                      return Promise.reject(
-                        new Error("Cash + Online cannot exceed total amount")
-                      );
-                    }
-                    return Promise.resolve();
-                  },
-                }),
-              ]}
-            >
-              <Input type="number" min={0} step={0.01} />
+
+            <Form.Item name="cashAmount" label="Cash Amount (Rs)">
+              <Input type="number" min={0} />
             </Form.Item>
-            <Form.Item
-              name="onlineAmount"
-              label="Online Received (Rs)"
-              rules={[
-                { required: true, message: "Please enter online amount" },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    const total = editData?.totalAmount || 0;
-                    const cash = parseFloat(getFieldValue("cashAmount")) || 0;
-                    const online = parseFloat(value) || 0;
-                    if (cash + online > total) {
-                      return Promise.reject(
-                        new Error("Cash + Online cannot exceed total amount")
-                      );
-                    }
-                    return Promise.resolve();
-                  },
-                }),
-              ]}
-            >
-              <Input type="number" min={0} step={0.01} />
+            <Form.Item name="onlineAmount" label="Online Amount (Rs)">
+              <Input type="number" min={0} />
             </Form.Item>
 
             <Form.Item>
