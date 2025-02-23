@@ -29,12 +29,15 @@ const Navbar = ({
         }
       : null
   );
-  const [isDropdownOpen, setIsDropdownOpen] = useState(!isAuthenticated && !auth.currentUser);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const dropdownRef = useRef(null);
   const menuRef = useRef(null);
 
   useEffect(() => {
+    if(auth.currentUser){
+      setIsDropdownOpen(false);
+    }
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
       if (user) {
         const docRef = doc(db, "Users", user.uid);
