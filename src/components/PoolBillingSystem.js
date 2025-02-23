@@ -335,12 +335,13 @@ const PoolBillingSystem = ({
     });
     setIsEditModalOpen(true);
 
+    const formattedEndTime = moment(endTime).format("YYYY-MM-DDTHH:mm");
     editForm.setFieldsValue({
       name: tableToEdit.name,
       phone: tableToEdit.phone,
-      startTime: new Date(tableToEdit.startTime).toISOString().slice(0, 16),
-      endTime: endTime.toISOString().slice(0, 16),
-      totalAmount, // Set to Rs 23 with 1 Lays (Step 3)
+      startTime: moment(tableToEdit.startTime).format("YYYY-MM-DDTHH:mm"),
+      endTime: formattedEndTime,
+      totalAmount,
     });
   };
 
@@ -702,18 +703,23 @@ const PoolBillingSystem = ({
 
     setIsEditModalOpen(false);
   };
-
   const handleEdit = (record) => {
     setEditData(record);
     setIsEditModalOpen(true);
 
+    // Format dates for datetime-local input (YYYY-MM-DDTHH:mm)
+    const formattedStartTime = record.startTime
+      ? moment(record.startTime).format("YYYY-MM-DDTHH:mm")
+      : null;
+    const formattedEndTime = record.endTime
+      ? moment(record.endTime).format("YYYY-MM-DDTHH:mm")
+      : null;
+
     editForm.setFieldsValue({
       name: record.name,
       phone: record.phone,
-      startTime: new Date(record.startTime).toISOString().slice(0, 16),
-      endTime: record.endTime
-        ? moment(record.endTime).toISOString().slice(0, 16)
-        : null,
+      startTime: formattedStartTime,
+      endTime: formattedEndTime, // Set actual endTime correctly formatted
       totalAmount: record.totalAmount,
       cashAmount: record.cashAmount || 0, // Default to 0 if not set
       onlineAmount: record.onlineAmount || 0, // Default to 0 if not set
@@ -1321,6 +1327,8 @@ const PoolBillingSystem = ({
                                 borderRadius: "5px",
                                 margin: 0,
                                 padding: 0,
+                                position:"relative",
+                                bottom:"20px"
                               }}
                             />
                             <Button
@@ -1363,8 +1371,9 @@ const PoolBillingSystem = ({
                                   style={{
                                     fontSize: "14px",
                                     fontWeight: "bold",
-                                    bottom: "50px",
-                                    position: "absolute",
+                                    bottom: "108px",
+                                    right:"10px",
+                                    position: "relative",
                                   }}
                                 >
                                   <p>👤 {activeTable.name}</p>
