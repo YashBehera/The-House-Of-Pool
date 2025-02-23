@@ -1746,7 +1746,7 @@ const PoolBillingSystem = ({
             <div className="overlay fixed top-0 left-0 w-full h-full bg-zinc-900 opacity-50 z-10"></div>
             <div
               ref={dropdownRef}
-              className="dropdown-menu absolute right-[28.5rem] top-[25vh] h-[26rem] w-[40rem] bg-white shadow-2xl rounded-3xl p-[6px] z-50 animate-slide-down flex items-center gap-2"
+              className="dropdown-menu fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-11/12 max-w-[40rem] h-[26rem] bg-white shadow-2xl rounded-3xl p-2 z-30 flex flex-col md:flex-row items-center gap-2 animate-fade-in"
             >
               <div>
                 <img
