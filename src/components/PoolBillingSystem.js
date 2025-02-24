@@ -625,7 +625,7 @@ const PoolBillingSystem = ({
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
     pendingUpdates.current[`timeout-${key}`] = setTimeout(() => {
       processPendingUpdates(id, item, clickId);
-    }, 500);
+    }, 100);
   };
 
   const decreaseItem = async (id, item) => {
@@ -672,7 +672,7 @@ const PoolBillingSystem = ({
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
     pendingUpdates.current[`timeout-${key}`] = setTimeout(() => {
       processPendingUpdates(id, item, clickId);
-    }, 500);
+    }, 100);
   };
 
   const removeItem = async (id, itemToRemove) => {
