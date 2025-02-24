@@ -1,7 +1,24 @@
-import { Button, Dropdown, Form, Input, Menu, Modal, Table } from "antd";
+import {
+  Button,
+  Dropdown,
+  Form,
+  Input,
+  Menu,
+  Modal,
+  Table,
+  Select,
+} from "antd";
 import "antd/dist/reset.css";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  onSnapshot,
+  setDoc,
+  collection,
+  getDocs,
+  updateDoc,
+} from "firebase/firestore";
 import moment from "moment"; // ✅ Ensure moment.js is installed (npm install moment)
 import React, { useEffect, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid"; // Import UUID (If not installed, run: npm install uuid)
@@ -89,6 +106,10 @@ const PoolBillingSystem = ({
   const [dropdownRecordId, setDropdownRecordId] = useState(null);
   const [loginForm] = Form.useForm();
   const [isLoading, setIsLoading] = useState(false); // New loading state
+  const [regularCustomers, setRegularCustomers] = useState([]); // Store regular customers
+  const [selectedPaymentOption, setSelectedPaymentOption] = useState("Paid"); // Default to "Paid"
+  const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState(false); // New state for add customer modal
+  const [addCustomerForm] = Form.useForm(); // New form for adding customer
 
   // Check authentication state
   useEffect(() => {
@@ -102,6 +123,57 @@ const PoolBillingSystem = ({
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    let unsubscribe = () => {};
+    if (isAuthenticated) {
+      unsubscribe = onSnapshot(
+        collection(db, "regularCustomers"),
+        (snapshot) => {
+          const customers = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          console.log("Real-time updated regular customers:", customers);
+          setRegularCustomers(customers);
+        },
+        (error) => {
+          console.error("Error listening to regular customers:", error);
+        }
+      );
+    }
+    return () => unsubscribe(); // Cleanup listener on unmount or auth change
+  }, [isAuthenticated]);
+
+  const addRegularCustomer = async (values) => {
+    if (!isAuthenticated) {
+      alert("You must be authenticated to add a customer.");
+      return;
+    }
+    const newCustomer = {
+      name: values.name,
+      phone: values.phone,
+      dues: parseFloat(values.dues) || 0, // Default to 0 if not provided
+    };
+    const customerId = uuidv4(); // Generate a unique ID
+    await setDoc(doc(db, "regularCustomers", customerId), newCustomer);
+    setIsAddCustomerModalOpen(false);
+    addCustomerForm.resetFields();
+    console.log(`Added new customer: ${newCustomer.name}`);
+  };
+
+  // Update customer dues in Firestore
+  const updateCustomerDues = async (customerId, amount) => {
+    if (!isAuthenticated) return;
+    const customerRef = doc(db, "regularCustomers", customerId);
+    const customerDoc = await getDoc(customerRef);
+    if (customerDoc.exists()) {
+      const currentDues = customerDoc.data().dues || 0;
+      const newDues = currentDues + amount;
+      await updateDoc(customerRef, { dues: newDues });
+      console.log(`Updated dues for ${customerId}: ${newDues}`);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -686,6 +758,17 @@ const PoolBillingSystem = ({
         const cashAmount = parseFloat(values.cashAmount) || 0;
         const onlineAmount = parseFloat(values.onlineAmount) || 0;
 
+        let updatedDues = 0;
+        if (selectedPaymentOption !== "Paid") {
+          const selectedCustomer = regularCustomers.find(
+            (c) => c.name === selectedPaymentOption
+          );
+          if (selectedCustomer) {
+            updatedDues = totalAmount - (cashAmount + onlineAmount);
+            updateCustomerDues(selectedCustomer.id, updatedDues);
+          }
+        }
+
         return {
           ...t,
           name: values.name || t.name,
@@ -697,12 +780,15 @@ const PoolBillingSystem = ({
           cashAmount, // Store cash amount
           onlineAmount, // Store online amount
           isClosed: true,
+          dues: updatedDues > 0 ? updatedDues : 0, // Track dues in table entry
         };
       })
     );
 
     setIsEditModalOpen(false);
+    setSelectedPaymentOption("Paid"); // Reset to default
   };
+
   const handleEdit = (record) => {
     setEditData(record);
     setIsEditModalOpen(true);
@@ -924,6 +1010,21 @@ const PoolBillingSystem = ({
           <>
             {selectedLocation === LOCATIONS.OLD_HOUSE && (
               <>
+                <Button
+                  type="primary"
+                  onClick={() => {
+                    console.log("Button clicked!");
+                    setIsAddCustomerModalOpen(true);
+                  }}
+                  style={{
+                    position: "absolute",
+                    top: "90px",
+                    left: "30px",
+                    zIndex: 9, // Ensure it’s above other elements
+                  }}
+                >
+                  Add Regular Customer
+                </Button>
                 <h1
                   style={{
                     margin: "0",
@@ -1327,8 +1428,8 @@ const PoolBillingSystem = ({
                                 borderRadius: "5px",
                                 margin: 0,
                                 padding: 0,
-                                position:"relative",
-                                bottom:"20px"
+                                position: "relative",
+                                bottom: "20px",
                               }}
                             />
                             <Button
@@ -1372,7 +1473,7 @@ const PoolBillingSystem = ({
                                     fontSize: "14px",
                                     fontWeight: "bold",
                                     bottom: "108px",
-                                    right:"10px",
+                                    right: "10px",
                                     position: "relative",
                                   }}
                                 >
@@ -1391,6 +1492,21 @@ const PoolBillingSystem = ({
 
             {selectedLocation === LOCATIONS.NEW_HOUSE && (
               <>
+                <Button
+                  type="primary"
+                  onClick={() => {
+                    console.log("Button clicked!");
+                    setIsAddCustomerModalOpen(true);
+                  }}
+                  style={{
+                    position: "absolute",
+                    top: "90px",
+                    left: "90px",
+                    zIndex: 9, // Ensure it’s above other elements
+                  }}
+                >
+                  Add Regular Customer
+                </Button>
                 <h1
                   style={{
                     margin: "0",
@@ -1656,6 +1772,50 @@ const PoolBillingSystem = ({
         </Modal>
 
         <Modal
+          title="Add New Regular Customer"
+          open={isAddCustomerModalOpen}
+          onCancel={() => setIsAddCustomerModalOpen(false)}
+          footer={null}
+        >
+          <Form form={addCustomerForm} onFinish={addRegularCustomer}>
+            <Form.Item
+              name="name"
+              label="Customer Name"
+              rules={[
+                { required: true, message: "Please enter the customer name" },
+              ]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              name="phone"
+              label="Phone Number"
+              rules={[
+                { required: true, message: "Please enter the phone number" },
+              ]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              name="dues"
+              label="Initial Dues (Rs)"
+              rules={[
+                {
+                  message: "Dues must be a non-negative number",
+                },
+              ]}
+            >
+              <Input type="number" min={0} />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit">
+                Add Customer
+              </Button>
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        <Modal
           title="Edit Table Entry"
           open={isEditModalOpen}
           onCancel={() => setIsEditModalOpen(false)}
@@ -1732,6 +1892,21 @@ const PoolBillingSystem = ({
             </Form.Item>
             <Form.Item name="onlineAmount" label="Online Amount (Rs)">
               <Input type="number" min={0} />
+            </Form.Item>
+
+            <Form.Item label="Payment Option">
+              <Select
+                value={selectedPaymentOption}
+                onChange={(value) => setSelectedPaymentOption(value)}
+                style={{ width: "100%" }}
+              >
+                <Select.Option value="Paid">Paid</Select.Option>
+                {regularCustomers.map((customer) => (
+                  <Select.Option key={customer.id} value={customer.name}>
+                    {customer.name} (Dues: Rs {customer.dues})
+                  </Select.Option>
+                ))}
+              </Select>
             </Form.Item>
 
             <Form.Item>
