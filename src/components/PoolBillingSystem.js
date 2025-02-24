@@ -405,6 +405,7 @@ const PoolBillingSystem = ({
       totalAmount, // Initial totalAmount includes items (Step 3)
       duration,
     });
+    setSelectedPaymentOption(tableToEdit.paymentOption || "Paid"); // Load stored payment option or default to "Paid"
     setIsEditModalOpen(true);
 
     const formattedEndTime = moment(endTime).format("YYYY-MM-DDTHH:mm");
@@ -781,6 +782,7 @@ const PoolBillingSystem = ({
           onlineAmount, // Store online amount
           isClosed: true,
           dues: updatedDues > 0 ? updatedDues : 0, // Track dues in table entry
+          paymentOption: selectedPaymentOption, // Store the selected payment option
         };
       })
     );
@@ -791,6 +793,7 @@ const PoolBillingSystem = ({
 
   const handleEdit = (record) => {
     setEditData(record);
+    setSelectedPaymentOption(record.paymentOption || "Paid"); // Load stored payment option
     setIsEditModalOpen(true);
 
     // Format dates for datetime-local input (YYYY-MM-DDTHH:mm)
@@ -1916,6 +1919,7 @@ const PoolBillingSystem = ({
             </Form.Item>
           </Form>
         </Modal>
+        
         {isDropdownOpen && (
           <>
             <div className="overlay fixed top-0 left-0 w-full h-full bg-zinc-900 opacity-50 z-10"></div>
