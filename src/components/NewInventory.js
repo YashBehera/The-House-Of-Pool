@@ -13,6 +13,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
   const [newHouseStock, setnewHouseStock] = useState({});
   const [showInitialStockModal, setShowInitialStockModal] = useState(false);
   const [showUpdateStockModal, setShowUpdateStockModal] = useState(false);
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false); // New state for custom confirmation
   const [initialStockInput, setInitialStockInput] = useState({});
   const [updateStockInput, setUpdateStockInput] = useState({});
   const [prevOrders, setPrevOrders] = useState({});
@@ -67,10 +68,23 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
   };
 
   // ✅ Reset Inventory
-  const resetInventory = async () => {
-    setShowInitialStockModal(true); // ✅ Ask for new stock values
+  // Custom reset confirmation logic
+  const resetInventory = () => {
+    console.log("resetInventory clicked");
+    setShowResetConfirmModal(true); // Show custom confirmation modal
+  };
+
+  const confirmReset = () => {
+    console.log("Reset confirmed");
+    setShowInitialStockModal(true);
     setnewHouseStock({});
     setPrevOrders({});
+    setShowResetConfirmModal(false); // Close confirmation modal
+  };
+
+  const cancelReset = () => {
+    console.log("Reset canceled");
+    setShowResetConfirmModal(false); // Close confirmation modal
   };
 
   // ✅ Handle Inventory Update Input
@@ -191,6 +205,21 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
           style={styles.table}
         />
 
+        <Modal
+          title="Confirm Reset"
+          open={showResetConfirmModal}
+          onOk={confirmReset}
+          onCancel={cancelReset}
+          okText="Yes"
+          okButtonProps={{ danger: true }}
+          cancelText="No"
+        >
+          <p>
+            Are you sure you want to reset the inventory? This action will clear
+            all current stock data and prompt for new initial values.
+          </p>
+        </Modal>
+
         {/* Modal for Initial Stock Input */}
         <Modal
           title="Set Initial Stock"
@@ -249,7 +278,9 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
               <Input
                 type="number"
                 min="0"
-                value={updateStockInput[item] || newHouseStock[item]?.available || 0}
+                value={
+                  updateStockInput[item] || newHouseStock[item]?.available || 0
+                }
                 onChange={(e) => handleUpdateStockChange(item, e.target.value)}
                 placeholder="Enter new quantity"
                 style={styles.inputField}
