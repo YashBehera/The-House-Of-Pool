@@ -722,7 +722,7 @@ const PoolBillingSystem = ({
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
     pendingUpdates.current[`timeout-${key}`] = setTimeout(() => {
       processPendingUpdates(id, itemToRemove, clickId);
-    }, 500);
+    }, 100);
   };
 
   const handleEndTimeChange = (e) => {
