@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Table,
   Card,
@@ -9,13 +9,25 @@ import {
   Col,
   Select,
   Spin,
+  Form,
+  Modal,
+  Button,
 } from "antd";
 import { SearchOutlined, MoneyCollectOutlined } from "@ant-design/icons";
 import { ITEM_PRICES } from "./PoolBillingSystem";
 import Navbar from "./Navbar";
 import moment from "moment";
-import { doc, getDoc, onSnapshot, collection } from "firebase/firestore";
-import { db } from "./firebase";
+import {
+  doc,
+  getDoc,
+  onSnapshot,
+  collection,
+  updateDoc,
+} from "firebase/firestore";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import logo1 from "./HOP3.png"; // Ensure these images are available
+import logo2 from "./HOP5.png";
+import { db, auth } from "./firebase";
 const { Title } = Typography;
 const { Option } = Select;
 
@@ -33,6 +45,28 @@ const SalesReport = ({
   const [monthlyTotalRevenue, setMonthlyTotalRevenue] = useState(0); // New state for monthly total
   const [loading, setLoading] = useState(false);
   const [regularCustomers, setRegularCustomers] = useState([]); // New state for regular customers
+  const [isEditCustomerModalOpen, setIsEditCustomerModalOpen] = useState(false);
+  const [editCustomerData, setEditCustomerData] = useState(null);
+  const [editCustomerForm] = Form.useForm();
+  const [isShowTablesModalOpen, setIsShowTablesModalOpen] = useState(false);
+  const [selectedCustomerTables, setSelectedCustomerTables] = useState([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginForm] = Form.useForm();
+  const dropdownRef = useRef(null);
+  const [dropdownActionCustomer, setDropdownActionCustomer] = useState(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    if (isDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isDropdownOpen]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -168,6 +202,63 @@ const SalesReport = ({
   useEffect(() => {
     fetchSalesData();
   }, [selectedDate, selectedLocation, reportType]);
+
+  const showLoginDropdownForEdit = (customer) => {
+    setDropdownActionCustomer(customer);
+    setIsDropdownOpen(true);
+  };
+
+  // Handle login submission
+  const handleLoginSubmit = async (values) => {
+    try {
+      await signInWithEmailAndPassword(auth, values.email, values.password);
+      if (dropdownActionCustomer) {
+        handleEditCustomer(dropdownActionCustomer);
+      }
+      setIsDropdownOpen(false);
+      loginForm.resetFields();
+    } catch (error) {
+      console.error("Login failed:", error);
+      alert("Invalid email or password. Please try again.");
+    }
+  };
+
+  const handleEditCustomer = (customer) => {
+    setEditCustomerData(customer);
+    setIsEditCustomerModalOpen(true);
+    editCustomerForm.setFieldsValue({
+      name: customer.name,
+      phone: customer.phone,
+      dues: customer.dues,
+      paymentAmount: 0, // Default payment amount
+    });
+  };
+
+  const updateCustomerDues = async (values) => {
+    if (!editCustomerData) return;
+    const customerRef = doc(db, "regularCustomers", editCustomerData.id);
+    const currentDues = editCustomerData.dues || 0;
+    const paymentAmount = parseFloat(values.paymentAmount) || 0;
+    const newDues = Math.max(0, currentDues - paymentAmount); // Ensure dues don’t go negative
+    await updateDoc(customerRef, { dues: newDues });
+    setIsEditCustomerModalOpen(false);
+    editCustomerForm.resetFields();
+  };
+
+  const handleShowCustomerTables = async (customer) => {
+    const allTables = [];
+    // Fetch tables for all dates in the selected location (simplified for this example)
+    const dates = [selectedDate]; // You could expand this to fetch all dates if needed
+    for (const date of dates) {
+      const tables = await getTablesByDate(date, selectedLocation);
+      const customerTables = tables.filter(
+        (table) => table.paymentOption === customer.name && table.dues > 0
+      );
+      allTables.push(...customerTables);
+    }
+    setSelectedCustomerTables(allTables);
+    setIsShowTablesModalOpen(true);
+  };
 
   if (
     !activeTables ||
@@ -321,6 +412,12 @@ const SalesReport = ({
     });
   }
 
+  const getTodaysDues = (customerName) => {
+    return activeTables
+      .filter((table) => table.paymentOption === customerName && table.dues > 0)
+      .reduce((sum, table) => sum + (table.dues || 0), 0);
+  };
+
   // Table Columns (Game Type Sales)
   const gameColumns = [
     {
@@ -394,11 +491,85 @@ const SalesReport = ({
       key: "phone",
     },
     {
-      title: "Dues (Rs) 💸",
+      title: "Total Dues (Rs) 💸",
       dataIndex: "dues",
       key: "dues",
       sorter: (a, b) => a.dues - b.dues,
       render: (dues) => `Rs ${dues.toFixed(2)}`,
+    },
+    {
+      title: "Today's Dues (Rs) 📅",
+      key: "todaysDues",
+      render: (_, record) => {
+        const todaysDues = getTodaysDues(record.name);
+        return `Rs ${todaysDues.toFixed(2)}`;
+      },
+      sorter: (a, b) => getTodaysDues(a.name) - getTodaysDues(b.name),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_, record) => (
+        <div style={{ display: "flex", gap: "10px" }}>
+          <Button
+            type="primary"
+            onClick={() =>
+              isAuthenticated
+                ? handleEditCustomer(record)
+                : showLoginDropdownForEdit(record)
+            }
+          >
+            Edit
+          </Button>
+          <Button
+            type="default"
+            onClick={() => handleShowCustomerTables(record)}
+          >
+            Show
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  const tableColumns = [
+    { title: "Table", dataIndex: "table", key: "table" },
+    { title: "Customer Name", dataIndex: "name", key: "name" },
+    {
+      title: "Start Time",
+      dataIndex: "startTime",
+      key: "startTime",
+      render: (t) => (t ? moment(t).format("hh:mm A") : "—"),
+    },
+    {
+      title: "End Time",
+      dataIndex: "endTime",
+      key: "endTime",
+      render: (t) => (t ? moment(t).format("hh:mm A") : "—"),
+    },
+    {
+      title: "Total Amount (Rs)",
+      dataIndex: "totalAmount",
+      key: "totalAmount",
+      render: (a) => `Rs ${a.toFixed(2)}`,
+    },
+    {
+      title: "Cash (Rs)",
+      dataIndex: "cashAmount",
+      key: "cashAmount",
+      render: (a) => `Rs ${(a || 0).toFixed(2)}`,
+    },
+    {
+      title: "Online (Rs)",
+      dataIndex: "onlineAmount",
+      key: "onlineAmount",
+      render: (a) => `Rs ${(a || 0).toFixed(2)}`,
+    },
+    {
+      title: "Dues Added (Rs)",
+      dataIndex: "dues",
+      key: "dues",
+      render: (d) => `Rs ${d.toFixed(2)}`,
     },
   ];
 
@@ -542,6 +713,117 @@ const SalesReport = ({
               pagination={{ pageSize: 5 }}
               style={{ borderRadius: "8px", overflow: "hidden" }}
             />
+
+            <Modal
+              title="Edit Customer Dues"
+              open={isEditCustomerModalOpen}
+              onCancel={() => setIsEditCustomerModalOpen(false)}
+              footer={null}
+            >
+              <Form form={editCustomerForm} onFinish={updateCustomerDues}>
+                <Form.Item name="name" label="Customer Name">
+                  <Input disabled />
+                </Form.Item>
+                <Form.Item name="phone" label="Phone Number">
+                  <Input disabled />
+                </Form.Item>
+                <Form.Item name="dues" label="Current Dues (Rs)">
+                  <Input disabled />
+                </Form.Item>
+                <Form.Item name="paymentAmount" label="Payment Amount (Rs)">
+                  <Input type="number" min={0} />
+                </Form.Item>
+                <Form.Item>
+                  <Button type="primary" htmlType="submit">
+                    Update Dues
+                  </Button>
+                </Form.Item>
+              </Form>
+            </Modal>
+
+            <Modal
+              title="Tables Contributing to Customer Dues"
+              open={isShowTablesModalOpen}
+              onCancel={() => setIsShowTablesModalOpen(false)}
+              footer={null}
+              width={800}
+            >
+              <Table
+                dataSource={selectedCustomerTables}
+                columns={tableColumns}
+                rowKey="id"
+                pagination={{ pageSize: 5 }}
+              />
+            </Modal>
+
+            {isDropdownOpen && (
+              <>
+                <div className="overlay fixed top-0 left-0 w-full h-full bg-zinc-900 opacity-50 z-10"></div>
+                <div
+                  ref={dropdownRef}
+                  className="dropdown-menu fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-11/12 max-w-[40rem] h-[26rem] bg-white shadow-2xl rounded-3xl p-2 z-30 flex flex-col md:flex-row items-center gap-2 animate-fade-in"
+                >
+                  <div>
+                    <img
+                      src={logo1}
+                      className="h-[12.5rem] w-[30rem] rounded-t-3xl"
+                      alt="Logo 1"
+                    />
+                    <img
+                      src={logo2}
+                      className="h-[12.5rem] w-[30rem] rounded-b-3xl"
+                      alt="Logo 2"
+                    />
+                  </div>
+                  <div className="bg-gray-100 h-[25rem] w-[30rem] text-black rounded-3xl shadow-xl shadow-gray-400 p-5">
+                    <div className="flex mt-1 ml-10 w-60 flex-col items-center justify-center">
+                      <span className="text-3xl font-bold text-black text-center relative bottom-4">
+                        The House Of Pool
+                      </span>
+                      <h3>Login to Edit Customer Dues</h3>
+                    </div>
+                    <div>
+                      <Form
+                        form={loginForm}
+                        onFinish={handleLoginSubmit}
+                        className="flex flex-col items-center justify-center"
+                      >
+                        <Form.Item
+                          name="email"
+                          label="Email"
+                          rules={[
+                            {
+                              required: true,
+                              message: "Please enter your email",
+                            },
+                          ]}
+                        >
+                          <Input type="email" />
+                        </Form.Item>
+                        <Form.Item
+                          name="password"
+                          label="Password"
+                          rules={[
+                            {
+                              required: true,
+                              message: "Please enter your password",
+                            },
+                          ]}
+                        >
+                          <Input.Password />
+                        </Form.Item>
+                        <Form.Item>
+                          <Button type="primary" htmlType="submit">
+                            Edit
+                          </Button>
+                        </Form.Item>
+                      </Form>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
           </>
         ) : (
           <Table
