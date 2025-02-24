@@ -14,7 +14,7 @@ import { SearchOutlined, MoneyCollectOutlined } from "@ant-design/icons";
 import { ITEM_PRICES } from "./PoolBillingSystem";
 import Navbar from "./Navbar";
 import moment from "moment";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, collection } from "firebase/firestore";
 import { db } from "./firebase";
 const { Title } = Typography;
 const { Option } = Select;
@@ -32,6 +32,25 @@ const SalesReport = ({
   const [reportType, setReportType] = useState("daily"); // Daily, Weekly, Monthly
   const [monthlyTotalRevenue, setMonthlyTotalRevenue] = useState(0); // New state for monthly total
   const [loading, setLoading] = useState(false);
+  const [regularCustomers, setRegularCustomers] = useState([]); // New state for regular customers
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "regularCustomers"),
+      (snapshot) => {
+        const customers = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        console.log("Fetched regular customers:", customers); // Debug log
+        setRegularCustomers(customers);
+      },
+      (error) => {
+        console.error("Error fetching regular customers:", error);
+      }
+    );
+    return () => unsubscribe(); // Cleanup listener
+  }, []);
 
   const getTablesByDate = async (date, location) => {
     const docSnap = await getDoc(doc(db, "tables", `${location}_${date}`));
@@ -238,6 +257,10 @@ const SalesReport = ({
     gameType.toLowerCase().includes(searchText.toLowerCase())
   );
 
+  const filteredCustomers = regularCustomers.filter(
+    ({ name }) => name.toLowerCase().includes(searchText.toLowerCase()) // Filter customers by name
+  );
+
   // Weekly Report
   const weeklyData = [];
   if (reportType === "weekly") {
@@ -358,6 +381,27 @@ const SalesReport = ({
     },
   ];
 
+  const customerColumns = [
+    {
+      title: "Customer Name 👤",
+      dataIndex: "name",
+      key: "name",
+      sorter: (a, b) => a.name.localeCompare(b.name),
+    },
+    {
+      title: "Phone Number 📞",
+      dataIndex: "phone",
+      key: "phone",
+    },
+    {
+      title: "Dues (Rs) 💸",
+      dataIndex: "dues",
+      key: "dues",
+      sorter: (a, b) => a.dues - b.dues,
+      render: (dues) => `Rs ${dues.toFixed(2)}`,
+    },
+  ];
+
   return (
     <div>
       <Navbar
@@ -390,8 +434,11 @@ const SalesReport = ({
         </Select>
 
         {loading ? (
-          <Spin size="large" style={{ display: "block", margin: "20px auto" }} />
-        ): reportType === "daily" ? (
+          <Spin
+            size="large"
+            style={{ display: "block", margin: "20px auto" }}
+          />
+        ) : reportType === "daily" ? (
           <>
             <Row gutter={16} style={{ marginBottom: "20px" }}>
               <Col span={8}>
@@ -473,13 +520,24 @@ const SalesReport = ({
                 overflow: "hidden",
               }}
             />
-            {/* Sales by Ordered Items */}
+
             <Title level={4} style={{ marginTop: "20px", color: "#52c41a" }}>
               🍔 Ordered Item Sales
             </Title>
             <Table
               dataSource={filteredItems}
               columns={itemColumns}
+              bordered
+              pagination={{ pageSize: 5 }}
+              style={{ borderRadius: "8px", overflow: "hidden" }}
+            />
+
+            <Title level={4} style={{ marginTop: "20px", color: "#fa8c16" }}>
+              👥 Regular Customer Dues
+            </Title>
+            <Table
+              dataSource={filteredCustomers}
+              columns={customerColumns}
               bordered
               pagination={{ pageSize: 5 }}
               style={{ borderRadius: "8px", overflow: "hidden" }}
