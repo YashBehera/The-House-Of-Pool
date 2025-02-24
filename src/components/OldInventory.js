@@ -10,15 +10,14 @@ import { ITEM_PRICES } from "./PoolBillingSystem";
 const { Title } = Typography;
 
 const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
-  const [oldHouseStock, setoldHouseStock] = useState({});
+  const [oldHouseStock, setOldHouseStock] = useState({});
   const [showInitialStockModal, setShowInitialStockModal] = useState(false);
   const [showUpdateStockModal, setShowUpdateStockModal] = useState(false);
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
   const [initialStockInput, setInitialStockInput] = useState({});
   const [updateStockInput, setUpdateStockInput] = useState({});
   const [prevOrders, setPrevOrders] = useState({});
-  const [selectedDate, setSelectedDate] = useState(
-    moment().format("YYYY-MM-DD")
-  );
+  const [selectedDate, setSelectedDate] = useState(moment().format("YYYY-MM-DD"));
 
   const saveInventory = async (inventory) => {
     await setDoc(doc(db, "inventory", "oldHouseStock"), { data: inventory });
@@ -30,17 +29,18 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
       doc(db, "inventory", "oldHouseStock"),
       (docSnap) => {
         const inventory = docSnap.exists() ? docSnap.data().data : {};
+        console.log("Firestore sync, inventory:", inventory); // Debug Firestore data
         if (Object.keys(inventory).length === 0) {
           setShowInitialStockModal(true);
         } else {
-          setoldHouseStock(inventory);
+          setOldHouseStock(inventory); // Always sync with Firestore
         }
       },
       (error) => {
         console.error("Firestore listener error:", error);
       }
     );
-    return () => unsub(); // Cleanup listener on unmount
+    return () => unsub();
   }, [selectedLocation]);
 
   const handleStockChange = (item, value) => {
@@ -50,10 +50,8 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
     }));
   };
 
-  // ✅ Save Initial Stock
   const saveInitialStock = async () => {
     const oldStock = {};
-    // Include all items from ITEM_PRICES
     Object.keys(ITEM_PRICES).forEach((item) => {
       oldStock[item] = {
         available: initialStockInput[item] || 0,
@@ -62,18 +60,28 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
     });
 
     await saveInventory(oldStock);
-    setoldHouseStock(oldStock);
+    setOldHouseStock(oldStock);
     setShowInitialStockModal(false);
   };
 
-  // ✅ Reset Inventory
-  const resetInventory = async () => {
-    setShowInitialStockModal(true); // ✅ Ask for new stock values
-    setoldHouseStock({});
-    setPrevOrders({});
+  const resetInventory = () => {
+    console.log("resetInventory clicked, current oldHouseStock:", oldHouseStock);
+    setShowResetConfirmModal(true);
   };
 
-  // ✅ Handle Inventory Update Input
+  const confirmReset = () => {
+    console.log("Reset confirmed, clearing oldHouseStock");
+    setOldHouseStock({}); // Clear stock only on confirmation
+    setPrevOrders({});
+    setShowInitialStockModal(true);
+    setShowResetConfirmModal(false);
+  };
+
+  const cancelReset = () => {
+    console.log("Reset canceled, oldHouseStock should persist:", oldHouseStock);
+    setShowResetConfirmModal(false); // Close modal, no state changes
+  };
+
   const handleUpdateStockChange = (item, value) => {
     setUpdateStockInput((prev) => ({
       ...prev,
@@ -81,7 +89,6 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
     }));
   };
 
-  // ✅ Update Inventory Quantity
   const updateStock = async () => {
     const updatedStock = { ...oldHouseStock };
 
@@ -92,11 +99,10 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
     });
 
     await saveInventory(updatedStock);
-    setoldHouseStock(updatedStock);
+    setOldHouseStock(updatedStock);
     setShowUpdateStockModal(false);
   };
 
-  // ✅ Stock Level Indicator
   const getStockTag = (quantity) => {
     if (quantity === 0) return <Tag color="red">Out of Stock</Tag>;
     if (quantity <= 3) return <Tag color="orange">Low Stock</Tag>;
@@ -104,7 +110,6 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
     return <Tag color="green">In Stock</Tag>;
   };
 
-  // ✅ Table Columns
   const columns = [
     {
       title: "Item",
@@ -121,8 +126,7 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
           <span
             style={{
               fontWeight: "bold",
-              color:
-                quantity === 0 ? "red" : quantity <= 3 ? "orange" : "black",
+              color: quantity === 0 ? "red" : quantity <= 3 ? "orange" : "black",
             }}
           >
             {quantity}
@@ -138,6 +142,7 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
       render: (quantity) => <Tag color="blue">{quantity}</Tag>,
     },
   ];
+
   if (selectedLocation !== "Old House Of Pool") return null;
 
   return (
@@ -153,7 +158,6 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
           🏪 Old House Of Pool Inventory
         </Title>
 
-        {/* Update Inventory Button */}
         <Button
           type="primary"
           icon={<EditOutlined />}
@@ -163,7 +167,6 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
           Update Inventory
         </Button>
 
-        {/* Reset Inventory Button */}
         <Button
           type="primary"
           icon={<ReloadOutlined />}
@@ -173,7 +176,6 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
           Reset Inventory
         </Button>
 
-        {/* Inventory Table */}
         <Table
           dataSource={
             oldHouseStock
@@ -191,7 +193,21 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
           style={styles.table}
         />
 
-        {/* Modal for Initial Stock Input */}
+        <Modal
+          title="Confirm Reset"
+          open={showResetConfirmModal}
+          onOk={confirmReset}
+          onCancel={cancelReset}
+          okText="Yes"
+          okButtonProps={{ danger: true }}
+          cancelText="No"
+        >
+          <p>
+            Are you sure you want to reset the inventory? This action will clear
+            all current stock data and prompt for new initial values.
+          </p>
+        </Modal>
+
         <Modal
           title="Set Initial Stock"
           open={showInitialStockModal}
@@ -209,33 +225,31 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
             </Button>,
           ]}
         >
-          {Object.keys(ITEM_PRICES).map(
-            (
-              item // Changed from defaultItems
-            ) => (
-              <div key={item} style={styles.modalInput}>
-                <label>{item}:</label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={initialStockInput[item] || ""}
-                  onChange={(e) => handleStockChange(item, e.target.value)}
-                  placeholder="Enter initial quantity"
-                  style={styles.inputField}
-                />
-              </div>
-            )
-          )}
+          {Object.keys(ITEM_PRICES).map((item) => (
+            <div key={item} style={styles.modalInput}>
+              <label>{item}:</label>
+              <Input
+                type="number"
+                min="0"
+                value={initialStockInput[item] || ""}
+                onChange={(e) => handleStockChange(item, e.target.value)}
+                placeholder="Enter initial quantity"
+                style={styles.inputField}
+              />
+            </div>
+          ))}
         </Modal>
 
-        {/* Modal for Updating Inventory */}
         <Modal
           title="Update Inventory"
           open={showUpdateStockModal}
           onOk={updateStock}
           onCancel={() => setShowUpdateStockModal(false)}
           footer={[
-            <Button key="cancel" onClick={() => setShowUpdateStockModal(false)}>
+            <Button
+              key="cancel"
+              onClick={() => setShowUpdateStockModal(false)}
+            >
               Cancel
             </Button>,
             <Button key="save" type="primary" onClick={updateStock}>
@@ -249,7 +263,9 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
               <Input
                 type="number"
                 min="0"
-                value={updateStockInput[item] ||oldHouseStock[item]?.available || 0}
+                value={
+                  updateStockInput[item] || oldHouseStock[item]?.available || 0
+                }
                 onChange={(e) => handleUpdateStockChange(item, e.target.value)}
                 placeholder="Enter new quantity"
                 style={styles.inputField}
@@ -262,9 +278,6 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
   );
 };
 
-export default OldInventory;
-
-// ✅ Styles for UI
 const styles = {
   card: {
     margin: "20px",
@@ -301,3 +314,5 @@ const styles = {
     marginTop: "5px",
   },
 };
+
+export default OldInventory;
