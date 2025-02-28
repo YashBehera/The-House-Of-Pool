@@ -189,31 +189,59 @@ const PoolBillingSystem = ({
   // Function to process batched updates
   const processPendingUpdates = async (id, item, clickId) => {
     const key = `${id}-${item}`;
-    const quantity = pendingUpdates.current[key] || 0;
-    if (quantity === 0 || processedClicks.current.has(clickId)) return;
+    const changes = pendingUpdates.current[key] || [];
+    if (changes.length === 0 || processedClicks.current.has(clickId)) return;
 
-    const stock = await getInventory();
-    if (!stock[item]) stock[item] = { available: 0, sold: 0 };
-
-    if (stock[item].available < quantity) {
-      alert(
-        `Not enough ${item} in stock! Available: ${stock[item].available}, Requested: ${quantity}`
-      );
+    const quantityChange = changes.reduce((sum, change) => sum + change, 0);
+    if (quantityChange === 0) {
       delete pendingUpdates.current[key];
       return;
     }
 
-    const success = await updateInventory(item, -quantity);
+    const stock = await getInventory();
+    if (!stock[item]) stock[item] = { available: 0, sold: 0 };
+
+    if (quantityChange > 0 && stock[item].available < quantityChange) {
+      alert(`Not enough ${item} in stock! Available: ${stock[item].available}, Requested: ${quantityChange}`);
+      setActiveTables((prevTables) => {
+        const updatedTables = prevTables.map((t) => {
+          if (t.id !== id) return t;
+          const newItems = [...t.orderedItems];
+          for (let i = 0; i < quantityChange; i++) {
+            const index = newItems.lastIndexOf(item);
+            if (index !== -1) newItems.splice(index, 1);
+          }
+          return { ...t, orderedItems: newItems };
+        });
+        return updatedTables;
+      });
+      delete pendingUpdates.current[key];
+      return;
+    }
+
+    const success = await updateInventory(item, -quantityChange);
     if (!success) {
       alert(`Failed to update inventory for ${item}`);
+      setActiveTables((prevTables) => {
+        const updatedTables = prevTables.map((t) => {
+          if (t.id !== id) return t;
+          const newItems = [...t.orderedItems];
+          for (let i = 0; i < quantityChange; i++) {
+            const index = newItems.lastIndexOf(item);
+            if (index !== -1) newItems.splice(index, 1);
+          }
+          return { ...t, orderedItems: newItems };
+        });
+        return updatedTables;
+      });
       delete pendingUpdates.current[key];
       return;
     }
 
     setActiveTables((prevTables) => {
-      const updatedTables = prevTables.map((t) => (t.id === id ? { ...t } : t));
+      const updatedTables = [...prevTables];
       saveTables(selectedDate, updatedTables, selectedLocation);
-      console.log(`Synced ${quantity} ${item} for table ${id} with Firestore`);
+      console.log(`Synced ${quantityChange} ${item} for table ${id} to Firestore`);
       return updatedTables;
     });
 
@@ -249,22 +277,58 @@ const PoolBillingSystem = ({
     const unsubscribe = onSnapshot(
       doc(db, "tables", `${location}_${date}`),
       (docSnap) => {
-        const tables = docSnap.exists()
+        const remoteTables = docSnap.exists()
           ? docSnap.data().data.map((table) => ({
               ...table,
-              startTime: table.startTime
-                ? moment(table.startTime).toDate()
-                : null,
+              startTime: table.startTime ? moment(table.startTime).toDate() : null,
               endTime: table.endTime ? moment(table.endTime).toDate() : null,
             }))
           : [];
-        callback(tables);
+
+        setActiveTables((prevTables) => {
+          const mergedTables = prevTables.map((localTable) => {
+            const remoteTable = remoteTables.find((rt) => rt.id === localTable.id);
+            if (!remoteTable) return localTable;
+
+            const hasPendingUpdates = Object.keys(pendingUpdates.current).some((key) =>
+              key.startsWith(`${localTable.id}-`)
+            );
+            if (hasPendingUpdates) {
+              console.log(`Preserving local orderedItems for ${localTable.id}: ${localTable.orderedItems.length}`);
+              return { ...remoteTable, orderedItems: localTable.orderedItems };
+            }
+            return remoteTable;
+          });
+
+          const newTables = remoteTables.filter(
+            (rt) => !prevTables.some((lt) => lt.id === rt.id)
+          );
+          const updatedTables = [...mergedTables, ...newTables];
+
+          if (!updatedTables.some((table) => table.name === "FOOD")) {
+            updatedTables.push({
+              id: uuidv4(),
+              table: "Food",
+              name: "FOOD",
+              phone: "",
+              startTime: null,
+              endTime: null,
+              duration: null,
+              orderedItems: [],
+              totalAmount: 0,
+              isClosed: false,
+              location: selectedLocation,
+              cashAmount: 0,
+              onlineAmount: 0,
+            });
+          }
+          return updatedTables;
+        });
+
+        callback(remoteTables);
       },
       (error) => {
-        console.error(
-          `Firestore listener error for ${location}_${date}:`,
-          error
-        );
+        console.error(`Firestore listener error for ${location}_${date}:`, error);
         callback([]);
       }
     );
@@ -431,65 +495,19 @@ const PoolBillingSystem = ({
   const addItemToEdit = async (item) => {
     const key = `${editData.id}-${item}`;
     const clickId = `${key}-${Date.now()}`;
-    pendingUpdates.current[key] = (pendingUpdates.current[key] || 0) + 1;
+    if (!pendingUpdates.current[key]) pendingUpdates.current[key] = [];
+    pendingUpdates.current[key].push(1);
 
     setEditData((prev) => {
       const updatedItems = [...prev.orderedItems, item];
-      const { totalAmount } = calculateTotalAmount(
-        { ...prev, orderedItems: updatedItems },
-        prev.endTime
-      );
-      editForm.setFieldsValue({ totalAmount }); // Update totalAmount in modal (Req 3)
+      const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, prev.endTime);
+      editForm.setFieldsValue({ totalAmount });
       return { ...prev, orderedItems: updatedItems, totalAmount };
     });
 
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
     pendingUpdates.current[`timeout-${key}`] = setTimeout(async () => {
-      const canOrder = await canOrderItem(item);
-      if (!canOrder) {
-        alert(`Sorry, ${item} is out of stock!`);
-        setEditData((prev) => {
-          const updatedItems = prev.orderedItems.filter((i) => i !== item);
-          const { totalAmount } = calculateTotalAmount(
-            { ...prev, orderedItems: updatedItems },
-            prev.endTime
-          );
-          editForm.setFieldsValue({ totalAmount });
-          return { ...prev, orderedItems: updatedItems, totalAmount };
-        });
-        delete pendingUpdates.current[key];
-        return;
-      }
-
-      const success = await updateInventory(item, -1);
-      if (!success) {
-        alert(`Failed to update inventory for ${item}`);
-        setEditData((prev) => {
-          const updatedItems = prev.orderedItems.filter((i) => i !== item);
-          const { totalAmount } = calculateTotalAmount(
-            { ...prev, orderedItems: updatedItems },
-            prev.endTime
-          );
-          editForm.setFieldsValue({ totalAmount });
-          return { ...prev, orderedItems: updatedItems, totalAmount };
-        });
-        delete pendingUpdates.current[key];
-        return;
-      }
-
-      setActiveTables((prevTables) => {
-        const updatedTables = prevTables.map((t) =>
-          t.id === editData.id
-            ? { ...t, orderedItems: [...t.orderedItems, item] }
-            : t
-        );
-        if (isAuthenticated)
-          saveTables(selectedDate, updatedTables, selectedLocation);
-        return updatedTables;
-      });
-
-      processedClicks.current.add(clickId);
-      delete pendingUpdates.current[key];
+      processPendingUpdates(editData.id, item, clickId);
     }, 500);
   };
 
@@ -588,37 +606,26 @@ const PoolBillingSystem = ({
   const increaseItem = async (id, item) => {
     const key = `${id}-${item}`;
     const clickId = `${key}-${Date.now()}`;
-    pendingUpdates.current[key] = (pendingUpdates.current[key] || 0) + 1;
+    if (!pendingUpdates.current[key]) pendingUpdates.current[key] = [];
+    pendingUpdates.current[key].push(1);
 
-    let updatedItems;
+    if (isEditModalOpen && editData?.id === id) {
+      setEditData((prev) => {
+        const updatedItems = [...prev.orderedItems, item];
+        const { totalAmount } = calculateTotalAmount(
+          { ...prev, orderedItems: updatedItems },
+          prev.endTime
+        );
+        editForm.setFieldsValue({ totalAmount });
+        return { ...prev, orderedItems: updatedItems, totalAmount };
+      });
+    }
 
     setActiveTables((prevTables) => {
       const updatedTables = prevTables.map((t) => {
         if (t.id !== id) return t;
-        updatedItems = [...t.orderedItems, item];
-        console.log(
-          `Immediate update for ${id}, click ${clickId}:`,
-          updatedItems
-        );
-        return { ...t, orderedItems: updatedItems };
+        return { ...t, orderedItems: [...t.orderedItems, item] };
       });
-      if (isEditModalOpen) {
-        setEditData((prev) => {
-          if (!prev || prev.id !== id) return prev;
-          const updatedItemsLocal = [...prev.orderedItems, item];
-          const { totalAmount } = calculateTotalAmount(
-            { ...prev, orderedItems: updatedItemsLocal },
-            prev.endTime
-          );
-          editForm.setFieldsValue({ totalAmount }); // Update modal UI (Step 4: Rs 63)
-          console.log(
-            `Immediate editData update for ${id}, click ${clickId}:`,
-            updatedItemsLocal,
-            `Total Amount: ${totalAmount}`
-          );
-          return { ...prev, orderedItems: updatedItemsLocal, totalAmount };
-        });
-      }
       return updatedTables;
     });
 
@@ -631,41 +638,31 @@ const PoolBillingSystem = ({
   const decreaseItem = async (id, item) => {
     const key = `${id}-${item}`;
     const clickId = `${key}-${Date.now()}`;
-    pendingUpdates.current[key] = (pendingUpdates.current[key] || 0) - 1;
+    if (!pendingUpdates.current[key]) pendingUpdates.current[key] = [];
+    pendingUpdates.current[key].push(-1);
 
-    let updatedItems;
+    if (isEditModalOpen && editData?.id === id) {
+      setEditData((prev) => {
+        const updatedItems = [...prev.orderedItems];
+        const index = updatedItems.lastIndexOf(item);
+        if (index !== -1) updatedItems.splice(index, 1);
+        const { totalAmount } = calculateTotalAmount(
+          { ...prev, orderedItems: updatedItems },
+          prev.endTime
+        );
+        editForm.setFieldsValue({ totalAmount });
+        return { ...prev, orderedItems: updatedItems, totalAmount };
+      });
+    }
 
     setActiveTables((prevTables) => {
       const updatedTables = prevTables.map((t) => {
         if (t.id !== id) return t;
-        updatedItems = [...t.orderedItems];
+        const updatedItems = [...t.orderedItems];
         const index = updatedItems.lastIndexOf(item);
         if (index !== -1) updatedItems.splice(index, 1);
-        console.log(
-          `Immediate decrease for ${id}, click ${clickId}:`,
-          updatedItems
-        );
         return { ...t, orderedItems: updatedItems };
       });
-      if (isEditModalOpen) {
-        setEditData((prev) => {
-          if (!prev || prev.id !== id) return prev;
-          const updatedItemsLocal = prev.orderedItems.filter(
-            (_, idx) => idx !== prev.orderedItems.lastIndexOf(item)
-          );
-          const { totalAmount } = calculateTotalAmount(
-            { ...prev, orderedItems: updatedItemsLocal },
-            prev.endTime
-          );
-          editForm.setFieldsValue({ totalAmount });
-          console.log(
-            `Immediate editData decrease for ${id}, click ${clickId}:`,
-            updatedItemsLocal,
-            `Total Amount: ${totalAmount}`
-          );
-          return { ...prev, orderedItems: updatedItemsLocal, totalAmount };
-        });
-      }
       return updatedTables;
     });
 
@@ -679,43 +676,27 @@ const PoolBillingSystem = ({
     const key = `${id}-${itemToRemove}`;
     const clickId = `${key}-${Date.now()}`;
     const currentTable = activeTables.find((t) => t.id === id);
-    const itemCount =
-      currentTable?.orderedItems.filter((item) => item === itemToRemove)
-        .length || 0;
-    pendingUpdates.current[key] =
-      (pendingUpdates.current[key] || 0) - itemCount;
+    const itemCount = currentTable?.orderedItems.filter((item) => item === itemToRemove).length || 0;
+    if (!pendingUpdates.current[key]) pendingUpdates.current[key] = [];
+    for (let i = 0; i < itemCount; i++) pendingUpdates.current[key].push(-1);
 
-    let updatedItems;
+    if (isEditModalOpen && editData?.id === id) {
+      setEditData((prev) => {
+        const updatedItems = prev.orderedItems.filter((item) => item !== itemToRemove);
+        const { totalAmount } = calculateTotalAmount(
+          { ...prev, orderedItems: updatedItems },
+          prev.endTime
+        );
+        editForm.setFieldsValue({ totalAmount });
+        return { ...prev, orderedItems: updatedItems, totalAmount };
+      });
+    }
 
     setActiveTables((prevTables) => {
       const updatedTables = prevTables.map((t) => {
         if (t.id !== id) return t;
-        updatedItems = t.orderedItems.filter((item) => item !== itemToRemove);
-        console.log(
-          `Immediate remove all ${itemToRemove} for ${id}, click ${clickId}:`,
-          updatedItems
-        );
-        return { ...t, orderedItems: updatedItems };
+        return { ...t, orderedItems: t.orderedItems.filter((item) => item !== itemToRemove) };
       });
-      if (isEditModalOpen) {
-        setEditData((prev) => {
-          if (!prev || prev.id !== id) return prev;
-          const updatedItemsLocal = prev.orderedItems.filter(
-            (item) => item !== itemToRemove
-          );
-          const { totalAmount } = calculateTotalAmount(
-            { ...prev, orderedItems: updatedItemsLocal },
-            prev.endTime
-          );
-          editForm.setFieldsValue({ totalAmount });
-          console.log(
-            `Immediate editData remove all ${itemToRemove} for ${id}, click ${clickId}:`,
-            updatedItemsLocal,
-            `Total Amount: ${totalAmount}`
-          );
-          return { ...prev, orderedItems: updatedItemsLocal, totalAmount };
-        });
-      }
       return updatedTables;
     });
 
@@ -881,54 +862,37 @@ const PoolBillingSystem = ({
   useEffect(() => {
     let unsubscribe = () => {};
     const loadData = () => {
-      setIsLoading(true); // Start loading
-      unsubscribe = getTablesByDate(
-        selectedDate,
-        selectedLocation,
-        (tables) => {
-          const updatedTables = tables || [];
-          if (!updatedTables.some((table) => table.name === "FOOD")) {
-            updatedTables.push({
-              id: uuidv4(),
-              table: "Food",
-              name: "FOOD",
-              phone: "",
-              startTime: null,
-              endTime: null,
-              duration: null,
-              orderedItems: [],
-              totalAmount: 0,
-              isClosed: false,
-              location: selectedLocation,
-              cashAmount: 0,
-              onlineAmount: 0,
-            });
-          }
-          setActiveTables(updatedTables);
-          setIsLoading(false); // End loading
+      setIsLoading(true);
+      unsubscribe = getTablesByDate(selectedDate, selectedLocation, (tables) => {
+        const updatedTables = tables || [];
+        if (!updatedTables.some((table) => table.name === "FOOD")) {
+          updatedTables.push({
+            id: uuidv4(),
+            table: "Food",
+            name: "FOOD",
+            phone: "",
+            startTime: null,
+            endTime: null,
+            duration: null,
+            orderedItems: [],
+            totalAmount: 0,
+            isClosed: false,
+            location: selectedLocation,
+            cashAmount: 0,
+            onlineAmount: 0,
+          });
         }
-      );
+        setActiveTables(updatedTables);
+        setIsLoading(false);
+      });
     };
-
     if (isAuthenticated) loadData();
     else {
       setActiveTables([]);
       setIsLoading(false);
     }
-
-    return () => unsubscribe(); // Cleanup listener on unmount or location change
+    return () => unsubscribe();
   }, [selectedDate, selectedLocation, isAuthenticated]);
-
-  // ✅ Save tables when activeTables change
-  useEffect(() => {
-    if (activeTables.length > 0 && selectedDate && isAuthenticated) {
-      saveTables(selectedDate, activeTables, selectedLocation);
-      console.log(
-        `Saved Tables for ${selectedDate} in Firestore`,
-        activeTables
-      );
-    }
-  }, [activeTables, isAuthenticated]);
 
   const sortedTables = [...activeTables]
     .filter((table) => table.location === selectedLocation)
@@ -1919,7 +1883,7 @@ const PoolBillingSystem = ({
             </Form.Item>
           </Form>
         </Modal>
-        
+
         {isDropdownOpen && (
           <>
             <div className="overlay fixed top-0 left-0 w-full h-full bg-zinc-900 opacity-50 z-10"></div>
