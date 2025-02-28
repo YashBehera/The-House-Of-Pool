@@ -19,7 +19,7 @@ import {
   getDocs,
   updateDoc,
 } from "firebase/firestore";
-import moment from "moment"; // ✅ Ensure moment.js is installed (npm install moment)
+import moment from "moment";
 import React, { useEffect, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid"; // Import UUID (If not installed, run: npm install uuid)
 import pool from "./8ball.png";
