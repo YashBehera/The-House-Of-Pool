@@ -47,8 +47,8 @@ function Login() {
           <Profile />
         </div>
       ) : (
-        <div className="bg-gray-100 h-[25rem] w-[19rem] text-black rounded-3xl shadow-xl shadow-gray-400">
-          <div className="flex mt-1 ml-10 w-60">
+        <div className="bg-gray-100 md:h-[25rem] h-[19rem] md:w-full w-full text-black rounded-3xl shadow-xl shadow-gray-400 flex flex-col items-center justify-start ">
+          <div className="flex mt-1  w-60">
             <span className="text-3xl font-bold text-black text-center">The House Of Pool</span>
           </div>
           <div>
@@ -79,14 +79,14 @@ function Login() {
                 />
               </div>
 
-              <button className=" flex items-center justify-center h-7 w-48 bg-blue-600 rounded-lg text-white mt-2">
+              <button className=" flex items-center justify-center h-7 md:w-48 w-36 bg-blue-600 rounded-lg text-white mt-2">
                 <div type="submit" className="btn btn-primary">
                   <span className="flex items-center justify-center">
                     Login
                   </span>
                 </div>
               </button>
-              <p className="forgot-password text-right text-xs mt-1">
+{/*               <p className="forgot-password text-right text-xs mt-1">
                 New Register?{" "}
                 <button
                   type="button"
@@ -95,7 +95,7 @@ function Login() {
                 >
                   Register Here
                 </button>
-              </p>
+              </p> */}
             </form>
           </div>
         </div>
