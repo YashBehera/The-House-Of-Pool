@@ -1,9 +1,3 @@
-/* Default styles for the dropdown */
-.dropdown-menu {
-    width: 91.666667%; /* w-11/12 */
-    max-width: 40rem;
-    height: 26rem;
-  }
 
   /* Fade-in animation */
   .animate-fade-in {
@@ -19,14 +13,3 @@
     }
   }
 
-  /* Mobile-specific styles */
-  @media (max-width: 768px) {
-    .dropdown-menu {
-      max-width: 20rem; /* Smaller width for mobile */
-      height: 20rem; /* Smaller height for mobile */
-    }
-
-    .dropdown-images img {
-      height: 10rem; /* Adjust image height to fit smaller dropdown */
-    }
-  }
