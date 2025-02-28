@@ -21,7 +21,7 @@ import {
 } from "firebase/firestore";
 import moment from "moment";
 import React, { useEffect, useRef, useState } from "react";
-import { v4 as uuidv4 } from "uuid"; // Import UUID (If not installed, run: npm install uuid)
+import { v4 as uuidv4 } from "uuid";
 import pool from "./8ball.png";
 import { auth, db } from "./firebase";
 import logo1 from "./HOP3.png"; // Assuming same as Navbar
