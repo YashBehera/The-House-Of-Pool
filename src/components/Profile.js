@@ -68,7 +68,7 @@ function Profile() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center bg-gray-100 h-[25rem] w-[19rem] text-black rounded-3xl shadow-xl shadow-gray-400">
+      <div className="flex items-center justify-center bg-gray-100  h-[19rem] md:h-[25rem] w-[13rem] md:w-[19rem] text-black rounded-3xl shadow-xl shadow-gray-400">
         <div className="flex items-center gap-4">
           <p className="text-black font-medium text-2xl">Loading...</p>
           <svg
@@ -99,8 +99,8 @@ function Profile() {
   return (
     <div>
       {userDetails ? (
-        <div className="bg-gray-100 h-[25rem] w-[19rem] text-black rounded-3xl shadow-xl shadow-gray-400">
-          <div className="flex mt-1 ml-8 w-60">
+        <div className="bg-gray-100 md:h-[25rem] h-[19rem] md:w-[19rem] w-[13rem] text-black rounded-3xl shadow-xl shadow-gray-400 flex flex-col items-center justify-start ">
+          <div className="flex mt-1  w-60">
             <span className="text-3xl font-bold text-black text-center">The House Of Pool</span>
           </div>
           <div style={{ display: "flex", justifyContent: "center" }}>
@@ -129,15 +129,15 @@ function Profile() {
               </div>
             )}
           </div>
-          <h3 className="mx-8 mt-2 font-semibold text-lg">
+          <h3 className="mx-8 mt-2 font-semibold text-lg whitespace-nowrap">
             Welcome {userDetails.firstName} 🙏🙏
           </h3>
-          <div className="mx-10 mt-2">
-            <p>Email: {userDetails.email}</p>
+          <div className="mx-10 mt-2 flex flex-col items-center justify-center">
+            <p className="whitespace-nowrap">Email: {userDetails.email}</p>
             <p>Name: {userDetails.firstName}</p>
           </div>
           <button
-            className="mt-2 flex items-center justify-center h-7 w-48 bg-blue-600 rounded-lg text-white mx-8"
+            className="mt-2 flex items-center justify-center h-7 md:w-48 w-36 bg-blue-600 rounded-lg text-white mx-8"
             onClick={handleLogout}
           >
             Sign Out
