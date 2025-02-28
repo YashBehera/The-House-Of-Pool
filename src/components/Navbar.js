@@ -10,6 +10,7 @@ import Register from "./Register";
 import { auth, db } from "./firebase";
 import { MenuOutlined } from "@ant-design/icons";
 import "./Navbar.css"
+import Login from "./Login";
 
 const { Option } = Select;
 
@@ -210,25 +211,26 @@ const Navbar = ({
           <div className="fixed inset-0 bg-black opacity-50 z-20" />
           <div
             ref={dropdownRef}
-            className="dropdown-menu fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-11/12 max-w-[40rem] h-[26rem] bg-white shadow-2xl rounded-3xl p-2 z-30 flex flex-col md:flex-row items-center gap-2 animate-fade-in"
+            className="dropdown-menu fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2  min-w-[30rem] md:max-w-[40rem] md:h-[26rem] h-[20rem] bg-white shadow-2xl rounded-3xl p-2 z-30 flex flex-row md:flex-row items-center justify-center animate-fade-in"
           >
-            <div className="dropdown-images w-full md:w-1/2">
+            <div className="dropdown-images w-full md:w-full h-[19rem] md:h-[25rem] flex flex-col items-center justify-center">
               <img
                 src={logo1}
-                className="w-full h-[12.5rem] rounded-t-3xl"
+                className="w-full h-10 md:h-[12.5rem] rounded-t-3xl"
                 alt="Logo 1"
               />
               <img
                 src={logo2}
-                className="w-full h-[12.5rem] rounded-b-3xl"
+                className="w-full h-10 md:h-[12.5rem] rounded-b-3xl"
                 alt="Logo 2"
               />
             </div>
-            <div className="w-full md:w-1/2 text-black p-4">
+            <div className="w-full md:w-full text-black p-4 flex flex-col items-center justify-center">
               {userDetails ? (
                 <Profile userDetails={userDetails} />
               ) : (
-                <Register />
+                // <Register/>
+                <Login />
               )}
             </div>
           </div>
