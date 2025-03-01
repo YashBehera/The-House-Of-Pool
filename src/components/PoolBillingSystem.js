@@ -19,18 +19,19 @@ import {
   getDocs,
   updateDoc,
 } from "firebase/firestore";
-import moment from "moment"; // ✅ Ensure moment.js is installed (npm install moment)
+import moment from "moment";
 import React, { useEffect, useRef, useState } from "react";
-import { v4 as uuidv4 } from "uuid"; // Import UUID (If not installed, run: npm install uuid)
+import { v4 as uuidv4 } from "uuid";
 import pool from "./8ball.png";
 import { auth, db } from "./firebase";
-import logo1 from "./HOP3.png"; // Assuming same as Navbar
-import logo2 from "./HOP5.png"; // Assuming same as Navbar
+import logo1 from "./HOP3.png";
+import logo2 from "./HOP5.png";
 import Navbar from "./Navbar";
 import "./pool.css";
 import ps5 from "./PS2.png";
 import tennis from "./tt.jpg";
 import TURF from "./turf.png";
+
 const POOL_RATE_PER_MIN = 2.5;
 const TURF_RATE_PER_HOUR = 1200;
 
@@ -39,7 +40,6 @@ const LOCATIONS = {
   NEW_HOUSE: "New House Of Pool",
 };
 
-// Configurations for each location
 const OLD_HOUSE_CONFIG = {
   tables: Array.from({ length: 14 }, (_, i) => `Table ${i + 1}`),
   ps: Array.from({ length: 6 }, (_, i) => `Controller ${i + 1}`),
@@ -48,20 +48,20 @@ const OLD_HOUSE_CONFIG = {
 };
 
 const OLD_HOUSE_POOL_RATES = {
-  "Table 1": 250, // Large table
-  "Table 5": 250, // Large table
-  "Table 2": 200, // Medium table
-  "Table 3": 200, // Medium table
-  "Table 4": 200, // Medium table
-  "Table 6": 200, // Medium table
-  "Table 13": 200, // Medium table
-  "Table 14": 200, // Medium table
-  "Table 7": 150, // Small table
-  "Table 8": 150, // Small table
-  "Table 9": 150, // Small table
-  "Table 10": 150, // Small table
-  "Table 11": 150, // Small table
-  "Table 12": 150, // Small table
+  "Table 1": 250,
+  "Table 5": 250,
+  "Table 2": 200,
+  "Table 3": 200,
+  "Table 4": 200,
+  "Table 6": 200,
+  "Table 13": 200,
+  "Table 14": 200,
+  "Table 7": 150,
+  "Table 8": 150,
+  "Table 9": 150,
+  "Table 10": 150,
+  "Table 11": 150,
+  "Table 12": 150,
 };
 
 const NEW_HOUSE_CONFIG = {
@@ -71,7 +71,6 @@ const NEW_HOUSE_CONFIG = {
   turf: [],
 };
 
-// ✅ Price List
 const ITEM_PRICES = {
   Lays: 20,
   Tin: 40,
@@ -96,22 +95,21 @@ const PoolBillingSystem = ({
   const [editForm] = Form.useForm();
   const [selectedDate, setSelectedDate] = useState(
     moment().format("YYYY-MM-DD")
-  ); // ✅ Default to today’s date
+  );
   const pendingUpdates = useRef({});
-  const processedClicks = useRef(new Set()); // Track processed click IDs
-  const [isAuthenticated, setIsAuthenticated] = useState(false); // Track auth state
+  const processedClicks = useRef(new Set());
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
-  const [dropdownAction, setDropdownAction] = useState(null); // "edit" or "delete"
+  const [dropdownAction, setDropdownAction] = useState(null);
   const [dropdownRecordId, setDropdownRecordId] = useState(null);
   const [loginForm] = Form.useForm();
-  const [isLoading, setIsLoading] = useState(false); // New loading state
-  const [regularCustomers, setRegularCustomers] = useState([]); // Store regular customers
-  const [selectedPaymentOption, setSelectedPaymentOption] = useState("Paid"); // Default to "Paid"
-  const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState(false); // New state for add customer modal
-  const [addCustomerForm] = Form.useForm(); // New form for adding customer
+  const [isLoading, setIsLoading] = useState(false);
+  const [regularCustomers, setRegularCustomers] = useState([]);
+  const [selectedPaymentOption, setSelectedPaymentOption] = useState("Paid");
+  const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState(false);
+  const [addCustomerForm] = Form.useForm();
 
-  // Check authentication state
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       setIsAuthenticated(!!user);
@@ -142,7 +140,7 @@ const PoolBillingSystem = ({
         }
       );
     }
-    return () => unsubscribe(); // Cleanup listener on unmount or auth change
+    return () => unsubscribe();
   }, [isAuthenticated]);
 
   const addRegularCustomer = async (values) => {
@@ -153,16 +151,15 @@ const PoolBillingSystem = ({
     const newCustomer = {
       name: values.name,
       phone: values.phone,
-      dues: parseFloat(values.dues) || 0, // Default to 0 if not provided
+      dues: parseFloat(values.dues) || 0,
     };
-    const customerId = uuidv4(); // Generate a unique ID
+    const customerId = uuidv4();
     await setDoc(doc(db, "regularCustomers", customerId), newCustomer);
     setIsAddCustomerModalOpen(false);
     addCustomerForm.resetFields();
     console.log(`Added new customer: ${newCustomer.name}`);
   };
 
-  // Update customer dues in Firestore
   const updateCustomerDues = async (customerId, amount) => {
     if (!isAuthenticated) return;
     const customerRef = doc(db, "regularCustomers", customerId);
@@ -186,7 +183,6 @@ const PoolBillingSystem = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isDropdownOpen]);
 
-  // Function to process batched updates
   const processPendingUpdates = async (id, item, clickId) => {
     const key = `${id}-${item}`;
     const changes = pendingUpdates.current[key] || [];
@@ -261,7 +257,7 @@ const PoolBillingSystem = ({
         ? new Date(table.startTime).toISOString()
         : null,
       endTime: table.endTime ? new Date(table.endTime).toISOString() : null,
-      location, // Store location with each table entry
+      location,
     }));
     await setDoc(doc(db, "tables", `${location}_${date}`), {
       data: formattedTables,
@@ -298,7 +294,6 @@ const PoolBillingSystem = ({
             );
             if (!remoteTable) return localTable;
 
-            // Preserve local isClosed if it’s true, even if remote is false
             const hasPendingUpdates = Object.keys(pendingUpdates.current).some(
               (key) => key.startsWith(`${localTable.id}-`)
             );
@@ -382,16 +377,24 @@ const PoolBillingSystem = ({
 
   const calculateTotalAmount = (table, endTime) => {
     const startTime = new Date(table.startTime);
-    // Use provided endTime, table's endTime, or current time as fallback
     const effectiveEndTime = endTime
       ? new Date(endTime)
       : table.endTime
       ? new Date(table.endTime)
       : new Date();
-    const duration = Math.max(
+    const totalMinutes = Math.max(
       Math.round((effectiveEndTime - startTime) / 60000),
       0
     );
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const durationString =
+      hours > 0
+        ? `${hours} hour${hours > 1 ? "s" : ""}${
+            minutes > 0 ? ` ${minutes} min` : ""
+          }`
+        : `${minutes} min`;
+
     const totalItemCost = table.orderedItems.reduce(
       (sum, item) => sum + ITEM_PRICES[item],
       0
@@ -399,33 +402,36 @@ const PoolBillingSystem = ({
     let totalAmount = totalItemCost;
 
     if (table.gameType === "Turf") {
-      totalAmount += Math.round((duration / 60) * TURF_RATE_PER_HOUR);
+      totalAmount += Math.round((totalMinutes / 60) * TURF_RATE_PER_HOUR);
     } else if (table.gameType === "8-ball Pool") {
       if (table.location === LOCATIONS.OLD_HOUSE) {
-        const hourlyRate = OLD_HOUSE_POOL_RATES[table.table] || 0; // Use table-specific rate or 0 if undefined
-        totalAmount += Math.round((duration / 60) * hourlyRate);
+        const hourlyRate = OLD_HOUSE_POOL_RATES[table.table] || 0;
+        totalAmount += Math.round((totalMinutes / 60) * hourlyRate);
       } else {
-        totalAmount += Math.round(duration * POOL_RATE_PER_MIN);
+        totalAmount += Math.round(totalMinutes * POOL_RATE_PER_MIN);
       }
     } else {
-      totalAmount += Math.round(duration * POOL_RATE_PER_MIN); // Default for other game types (PS, Table Tennis)
+      totalAmount += Math.round(totalMinutes * POOL_RATE_PER_MIN);
     }
 
-    return { totalAmount: Math.round(totalAmount), duration };
+    return {
+      totalAmount: Math.round(totalAmount),
+      duration: totalMinutes,
+      durationString,
+    };
   };
 
   const startTable = (values) => {
     if (!selectedTable) return;
 
-    const startTime = new Date().toISOString(); // Ensure correct format
+    const startTime = new Date().toISOString();
 
-    console.log("Selected Table Name :", selectedTable); // Debugging log
+    console.log("Selected Table Name :", selectedTable);
 
-    let gameType = "Other"; // Default value
+    let gameType = "Other";
 
     if (typeof selectedTable === "string") {
-      const lowerTable = selectedTable.toLowerCase(); // Normalize case
-
+      const lowerTable = selectedTable.toLowerCase();
       if (lowerTable.includes("table tennis")) {
         gameType = "Table Tennis";
       } else if (lowerTable.startsWith("table ")) {
@@ -439,20 +445,20 @@ const PoolBillingSystem = ({
       console.error("Error: selectedTable is not a string", selectedTable);
     }
 
-    console.log("Determined Game Type:", gameType); // Debugging log
+    console.log("Determined Game Type:", gameType);
 
     const newEntry = {
       ...values,
-      id: uuidv4(), // ✅ Use UUID for unique ID
+      id: uuidv4(),
       table: selectedTable,
       startTime,
       orderedItems: [],
       totalAmount: 0,
       gameType,
-      isClosed: false, // Ensure closed tables don't get modified
-      location: selectedLocation, // Add location to entry
-      cashAmount: 0, // New field for cash payment
-      onlineAmount: 0, // New field for online payment
+      isClosed: false,
+      location: selectedLocation,
+      cashAmount: 0,
+      onlineAmount: 0,
     };
 
     setActiveTables((prevTables) => {
@@ -473,27 +479,20 @@ const PoolBillingSystem = ({
     if (!tableToEdit || tableToEdit.endTime) return;
 
     const endTime = new Date();
-    const { totalAmount, duration } = calculateTotalAmount(
+    const { totalAmount, duration, durationString } = calculateTotalAmount(
       tableToEdit,
       endTime
-    ); // Include existing orderedItems
-
-    setActiveTables((prevTables) =>
-      prevTables.map((t) =>
-        t.id === id
-          ? { ...t, endTime, totalAmount, duration, isClosed: true }
-          : t
-      )
     );
 
     setEditData({
       ...tableToEdit,
       endTime,
-      totalAmount, // Initial totalAmount includes items (Step 3)
+      totalAmount,
       duration,
-      isClosed: true, // Reflect in editData too
+      durationString,
+      isClosed: true,
     });
-    setSelectedPaymentOption(tableToEdit.paymentOption || "Paid"); // Load stored payment option or default to "Paid"
+    setSelectedPaymentOption(tableToEdit.paymentOption || "Paid");
     setIsEditModalOpen(true);
 
     const formattedEndTime = moment(endTime).format("YYYY-MM-DDTHH:mm");
@@ -524,12 +523,18 @@ const PoolBillingSystem = ({
 
     setEditData((prev) => {
       const updatedItems = [...prev.orderedItems, item];
-      const { totalAmount } = calculateTotalAmount(
+      const { totalAmount, duration, durationString } = calculateTotalAmount(
         { ...prev, orderedItems: updatedItems },
         prev.endTime
       );
       editForm.setFieldsValue({ totalAmount });
-      return { ...prev, orderedItems: updatedItems, totalAmount };
+      return {
+        ...prev,
+        orderedItems: updatedItems,
+        totalAmount,
+        duration,
+        durationString,
+      };
     });
 
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
@@ -538,7 +543,6 @@ const PoolBillingSystem = ({
     }, 500);
   };
 
-  // ✅ Aggregate ordered items for display
   const aggregateItems = (items) => {
     const itemCounts = items.reduce((acc, item) => {
       acc[item] = (acc[item] || 0) + 1;
@@ -550,9 +554,7 @@ const PoolBillingSystem = ({
       .join(", ");
   };
 
-  // ✅ Dropdown Menu List
   const getMenu = (id) => {
-    // ✅ Find the correct table data, return an empty menu if not found
     const tableData = activeTables.find((t) => t.id === id);
     if (!tableData)
       return (
@@ -567,7 +569,6 @@ const PoolBillingSystem = ({
           const itemCount = tableData.orderedItems
             ? tableData.orderedItems.filter((i) => i === item).length
             : 0;
-
           return (
             <Menu.Item key={index}>
               <div
@@ -639,12 +640,18 @@ const PoolBillingSystem = ({
     if (isEditModalOpen && editData?.id === id) {
       setEditData((prev) => {
         const updatedItems = [...prev.orderedItems, item];
-        const { totalAmount } = calculateTotalAmount(
+        const { totalAmount, duration, durationString } = calculateTotalAmount(
           { ...prev, orderedItems: updatedItems },
           prev.endTime
         );
         editForm.setFieldsValue({ totalAmount });
-        return { ...prev, orderedItems: updatedItems, totalAmount };
+        return {
+          ...prev,
+          orderedItems: updatedItems,
+          totalAmount,
+          duration,
+          durationString,
+        };
       });
     }
 
@@ -673,12 +680,18 @@ const PoolBillingSystem = ({
         const updatedItems = [...prev.orderedItems];
         const index = updatedItems.lastIndexOf(item);
         if (index !== -1) updatedItems.splice(index, 1);
-        const { totalAmount } = calculateTotalAmount(
+        const { totalAmount, duration, durationString } = calculateTotalAmount(
           { ...prev, orderedItems: updatedItems },
           prev.endTime
         );
         editForm.setFieldsValue({ totalAmount });
-        return { ...prev, orderedItems: updatedItems, totalAmount };
+        return {
+          ...prev,
+          orderedItems: updatedItems,
+          totalAmount,
+          duration,
+          durationString,
+        };
       });
     }
 
@@ -714,12 +727,18 @@ const PoolBillingSystem = ({
         const updatedItems = prev.orderedItems.filter(
           (item) => item !== itemToRemove
         );
-        const { totalAmount } = calculateTotalAmount(
+        const { totalAmount, duration, durationString } = calculateTotalAmount(
           { ...prev, orderedItems: updatedItems },
           prev.endTime
         );
         editForm.setFieldsValue({ totalAmount });
-        return { ...prev, orderedItems: updatedItems, totalAmount };
+        return {
+          ...prev,
+          orderedItems: updatedItems,
+          totalAmount,
+          duration,
+          durationString,
+        };
       });
     }
 
@@ -747,9 +766,18 @@ const PoolBillingSystem = ({
       ? new Date(editData.endTime)
       : new Date();
     setEditData((prev) => {
-      const { totalAmount } = calculateTotalAmount(prev, newEndTime);
-      editForm.setFieldsValue({ totalAmount }); // Update totalAmount in modal
-      return { ...prev, endTime: newEndTime, totalAmount };
+      const { totalAmount, duration, durationString } = calculateTotalAmount(
+        prev,
+        newEndTime
+      );
+      editForm.setFieldsValue({ totalAmount });
+      return {
+        ...prev,
+        endTime: newEndTime,
+        totalAmount,
+        duration,
+        durationString,
+      };
     });
   };
 
@@ -766,7 +794,7 @@ const PoolBillingSystem = ({
           0
         );
         const updatedOrderedItems = editData.orderedItems || t.orderedItems;
-        const { totalAmount } = calculateTotalAmount(
+        const { totalAmount, duration, durationString } = calculateTotalAmount(
           { ...t, orderedItems: updatedOrderedItems },
           newEndTime
         );
@@ -791,7 +819,8 @@ const PoolBillingSystem = ({
           name: values.name || t.name,
           phone: values.phone || t.phone,
           endTime: newEndTime,
-          duration: newDuration,
+          duration,
+          durationString,
           orderedItems: updatedOrderedItems,
           totalAmount,
           cashAmount,
@@ -802,7 +831,6 @@ const PoolBillingSystem = ({
         };
       });
 
-      // Explicitly save to Firestore after update
       saveTables(selectedDate, updatedTables, selectedLocation);
       return updatedTables;
     });
@@ -813,10 +841,9 @@ const PoolBillingSystem = ({
 
   const handleEdit = (record) => {
     setEditData(record);
-    setSelectedPaymentOption(record.paymentOption || "Paid"); // Load stored payment option
+    setSelectedPaymentOption(record.paymentOption || "Paid");
     setIsEditModalOpen(true);
 
-    // Format dates for datetime-local input (YYYY-MM-DDTHH:mm)
     const formattedStartTime = record.startTime
       ? moment(record.startTime).format("YYYY-MM-DDTHH:mm")
       : null;
@@ -828,10 +855,10 @@ const PoolBillingSystem = ({
       name: record.name,
       phone: record.phone,
       startTime: formattedStartTime,
-      endTime: formattedEndTime, // Set actual endTime correctly formatted
+      endTime: formattedEndTime,
       totalAmount: record.totalAmount,
-      cashAmount: record.cashAmount || 0, // Default to 0 if not set
-      onlineAmount: record.onlineAmount || 0, // Default to 0 if not set
+      cashAmount: record.cashAmount || 0,
+      onlineAmount: record.onlineAmount || 0,
     });
   };
 
@@ -940,30 +967,24 @@ const PoolBillingSystem = ({
   const sortedTables = [...activeTables]
     .filter((table) => table.location === selectedLocation)
     .sort((a, b) => {
-      if (a.name === "FOOD") return -1; // "Food" row always first
+      if (a.name === "FOOD") return -1;
       if (b.name === "FOOD") return 1;
-
-      if (!a.isClosed && b.isClosed) return -1; // Open tables before closed ones
+      if (!a.isClosed && b.isClosed) return -1;
       if (a.isClosed && !b.isClosed) return 1;
-
-      return 0; // Maintain order otherwise
+      return 0;
     });
 
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsDropdownOpen(false); // Close the dropdown if clicking outside
+        setIsDropdownOpen(false);
       }
     };
-
-    // Add event listener when the dropdown is open
     if (isDropdownOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     } else {
       document.removeEventListener("mousedown", handleClickOutside);
     }
-
-    // Clean up event listener on unmount
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
@@ -1002,7 +1023,6 @@ const PoolBillingSystem = ({
 
   return (
     <div>
-      {/* Navbar */}
       <Navbar
         selectedDate={selectedDate}
         setSelectedDate={setSelectedDate}
@@ -1010,7 +1030,6 @@ const PoolBillingSystem = ({
         selectedLocation={selectedLocation}
         setSelectedLocation={setSelectedLocation}
       />
-
       <div style={{ padding: 0, marginTop: 60 }}>
         {isLoading ? (
           <div style={{ textAlign: "center", padding: "20px" }}>
@@ -1030,7 +1049,7 @@ const PoolBillingSystem = ({
                     position: "absolute",
                     top: "90px",
                     left: "30px",
-                    zIndex: 9, // Ensure it’s above other elements
+                    zIndex: 9,
                   }}
                 >
                   Add Regular Customer
@@ -1125,7 +1144,6 @@ const PoolBillingSystem = ({
                   ))}
                 </div>
 
-                {/* Second Row: Tables 7, 8, 9, 10, 11, 12, 14 */}
                 <div
                   style={{
                     display: "flex",
@@ -1223,81 +1241,79 @@ const PoolBillingSystem = ({
                     justifyContent: "center",
                   }}
                 >
-                  {config.ps.map((controller) => {
-                    return (
-                      <div
-                        key={controller}
+                  {config.ps.map((controller) => (
+                    <div
+                      key={controller}
+                      style={{
+                        position: "relative",
+                        textAlign: "center",
+                        width: "220px",
+                        height: "210px",
+                      }}
+                    >
+                      <img
+                        src={ps5}
+                        alt={controller}
                         style={{
-                          position: "relative",
-                          textAlign: "center",
-                          width: "220px",
-                          height: "210px",
+                          width: "200px",
+                          height: "150px",
+                          borderRadius: "5px",
+                          margin: 0,
+                          padding: 0,
                         }}
-                      >
-                        <img
-                          src={ps5}
-                          alt={controller}
-                          style={{
-                            width: "200px",
-                            height: "150px",
-                            borderRadius: "5px",
-                            margin: 0,
-                            padding: 0,
-                          }}
-                        />
-                        <Button
-                          type="primary"
-                          onClick={() => {
-                            setSelectedTable(controller);
-                            setIsModalOpen(true);
-                          }}
-                          disabled={activeTables.some(
-                            (t) => t.table === controller && !t.isClosed
-                          )}
-                          style={{
-                            backgroundColor: activeTables.some(
-                              (t) => t.table === controller && !t.isClosed
-                            )
-                              ? "red"
-                              : "rgba(0, 89, 255, 0.93)",
-                            marginTop: "10px",
-                            cursor: activeTables.some(
-                              (t) => t.table === controller && !t.isClosed
-                            )
-                              ? "not-allowed" // Show disabled cursor
-                              : "pointer",
-                            color: "white",
-                          }}
-                        >
-                          {activeTables.some(
+                      />
+                      <Button
+                        type="primary"
+                        onClick={() => {
+                          setSelectedTable(controller);
+                          setIsModalOpen(true);
+                        }}
+                        disabled={activeTables.some(
+                          (t) => t.table === controller && !t.isClosed
+                        )}
+                        style={{
+                          backgroundColor: activeTables.some(
                             (t) => t.table === controller && !t.isClosed
                           )
-                            ? "In Use"
-                            : "Start ᕈᔑ𝟻"}
-                        </Button>
-                        <h3 style={{ position: "relative", top: "10px" }}>
-                          {controller}
-                        </h3>
-                        {activeTables
-                          .filter((t) => t.table === controller && !t.isClosed) // ✅ Get only tables that are NOT closed
-                          .map((activeTable) => (
-                            <div
-                              key={activeTable.id}
-                              style={{
-                                fontSize: "14px",
-                                fontWeight: "bold",
-                                bottom: "127px",
-                                position: "relative",
-                                right: "90px",
-                              }}
-                            >
-                              <p>👤 {activeTable.name}</p>
-                              <p>📞 {activeTable.phone}</p>
-                            </div>
-                          ))}
-                      </div>
-                    );
-                  })}
+                            ? "red"
+                            : "rgba(0, 89, 255, 0.93)",
+                          marginTop: "10px",
+                          cursor: activeTables.some(
+                            (t) => t.table === controller && !t.isClosed
+                          )
+                            ? "not-allowed"
+                            : "pointer",
+                          color: "white",
+                        }}
+                      >
+                        {activeTables.some(
+                          (t) => t.table === controller && !t.isClosed
+                        )
+                          ? "In Use"
+                          : "Start ᕈᔑ𝟻"}
+                      </Button>
+                      <h3 style={{ position: "relative", top: "10px" }}>
+                        {controller}
+                      </h3>
+                      {activeTables
+                        .filter((t) => t.table === controller && !t.isClosed)
+                        .map((activeTable) => (
+                          <div
+                            key={activeTable.id}
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: "bold",
+                              bottom: "127px",
+                              position: "relative",
+                              right: "90px",
+                            }}
+                          >
+                            <p>👤 {activeTable.name}</p>
+                            <p>📞 {activeTable.phone}</p>
+                          </div>
+                        ))}
+                    </div>
+                  ))}
                 </div>
 
                 <div className="flex flex-row items-center justify-center gap-36">
@@ -1320,82 +1336,80 @@ const PoolBillingSystem = ({
                         flexWrap: "wrap",
                       }}
                     >
-                      {config.tt.map((tableTennis) => {
-                        return (
-                          <div
-                            key={tableTennis}
+                      {config.tt.map((tableTennis) => (
+                        <div
+                          key={tableTennis}
+                          style={{
+                            position: "relative",
+                            textAlign: "center",
+                            width: "200px",
+                            height: "210px",
+                          }}
+                        >
+                          <img
+                            src={tennis}
+                            alt={tableTennis}
                             style={{
-                              position: "relative",
-                              textAlign: "center",
                               width: "200px",
-                              height: "210px",
+                              height: "150px",
+                              borderRadius: "5px",
+                              margin: 0,
+                              padding: 0,
                             }}
-                          >
-                            <img
-                              src={tennis}
-                              alt={tableTennis}
-                              style={{
-                                width: "200px",
-                                height: "150px",
-                                borderRadius: "5px",
-                                margin: 0,
-                                padding: 0,
-                              }}
-                            />
-                            <Button
-                              type="primary"
-                              onClick={() => {
-                                setSelectedTable(tableTennis);
-                                setIsModalOpen(true);
-                              }}
-                              disabled={activeTables.some(
-                                (t) => t.table === tableTennis && !t.isClosed
-                              )}
-                              style={{
-                                backgroundColor: activeTables.some(
-                                  (t) => t.table === tableTennis && !t.isClosed
-                                )
-                                  ? "red"
-                                  : "rgba(0, 89, 255, 0.93)",
-                                marginTop: "10px",
-                                cursor: activeTables.some(
-                                  (t) => t.table === tableTennis && !t.isClosed
-                                )
-                                  ? "not-allowed" // Show disabled cursor
-                                  : "pointer",
-                                color: "white",
-                              }}
-                            >
-                              {activeTables.some(
+                          />
+                          <Button
+                            type="primary"
+                            onClick={() => {
+                              setSelectedTable(tableTennis);
+                              setIsModalOpen(true);
+                            }}
+                            disabled={activeTables.some(
+                              (t) => t.table === tableTennis && !t.isClosed
+                            )}
+                            style={{
+                              backgroundColor: activeTables.some(
                                 (t) => t.table === tableTennis && !t.isClosed
                               )
-                                ? "In Use"
-                                : "Start Table"}
-                            </Button>
-                            <h3 style={{ position: "relative", top: "10px" }}>
-                              {tableTennis}
-                            </h3>
-                            {activeTables
-                              .filter(
+                                ? "red"
+                                : "rgba(0, 89, 255, 0.93)",
+                              marginTop: "10px",
+                              cursor: activeTables.some(
                                 (t) => t.table === tableTennis && !t.isClosed
-                              ) // ✅ Get only tables that are NOT closed
-                              .map((activeTable) => (
-                                <div
-                                  key={activeTable.id}
-                                  style={{
-                                    fontSize: "14px",
-                                    fontWeight: "bold",
-                                    bottom: "50px",
-                                    position: "absolute",
-                                  }}
-                                >
-                                  <p>👤 {activeTable.name}</p>
-                                  <p>📞 {activeTable.phone}</p>
-                                </div>
-                              ))}
-                          </div>
-                        );
-                      })}
+                              )
+                                ? "not-allowed"
+                                : "pointer",
+                              color: "white",
+                            }}
+                          >
+                            {activeTables.some(
+                              (t) => t.table === tableTennis && !t.isClosed
+                            )
+                              ? "In Use"
+                              : "Start Table"}
+                          </Button>
+                          <h3 style={{ position: "relative", top: "10px" }}>
+                            {tableTennis}
+                          </h3>
+                          {activeTables
+                            .filter(
+                              (t) => t.table === tableTennis && !t.isClosed
+                            )
+                            .map((activeTable) => (
+                              <div
+                                key={activeTable.id}
+                                style={{
+                                  fontSize: "14px",
+                                  fontWeight: "bold",
+                                  bottom: "50px",
+                                  position: "absolute",
+                                }}
+                              >
+                                <p>👤 {activeTable.name}</p>
+                                <p>📞 {activeTable.phone}</p>
+                              </div>
+                            ))}
+                        </div>
+                      ))}
                     </div>
                   </div>
 
@@ -1418,82 +1432,80 @@ const PoolBillingSystem = ({
                         flexWrap: "wrap",
                       }}
                     >
-                      {config.turf.map((ground) => {
-                        return (
-                          <div
-                            key={ground}
+                      {config.turf.map((ground) => (
+                        <div
+                          key={ground}
+                          style={{
+                            position: "relative",
+                            textAlign: "center",
+                            width: "200px",
+                            height: "210px",
+                          }}
+                        >
+                          <img
+                            src={TURF}
+                            alt={ground}
                             style={{
+                              width: "270px",
+                              height: "170px",
+                              borderRadius: "5px",
+                              margin: 0,
+                              padding: 0,
                               position: "relative",
-                              textAlign: "center",
-                              width: "200px",
-                              height: "210px",
+                              bottom: "20px",
                             }}
-                          >
-                            <img
-                              src={TURF}
-                              alt={ground}
-                              style={{
-                                width: "270px",
-                                height: "170px",
-                                borderRadius: "5px",
-                                margin: 0,
-                                padding: 0,
-                                position: "relative",
-                                bottom: "20px",
-                              }}
-                            />
-                            <Button
-                              type="primary"
-                              onClick={() => {
-                                setSelectedTable(ground);
-                                setIsModalOpen(true);
-                              }}
-                              disabled={activeTables.some(
-                                (t) => t.table === ground && !t.isClosed
-                              )}
-                              style={{
-                                backgroundColor: activeTables.some(
-                                  (t) => t.table === ground && !t.isClosed
-                                )
-                                  ? "red"
-                                  : "rgba(0, 89, 255, 0.93)",
-                                position: "relative",
-                                bottom: "10px",
-                                cursor: activeTables.some(
-                                  (t) => t.table === ground && !t.isClosed
-                                )
-                                  ? "not-allowed" // Show disabled cursor
-                                  : "pointer",
-                                color: "white",
-                              }}
-                            >
-                              {activeTables.some(
+                          />
+                          <Button
+                            type="primary"
+                            onClick={() => {
+                              setSelectedTable(ground);
+                              setIsModalOpen(true);
+                            }}
+                            disabled={activeTables.some(
+                              (t) => t.table === ground && !t.isClosed
+                            )}
+                            style={{
+                              backgroundColor: activeTables.some(
                                 (t) => t.table === ground && !t.isClosed
                               )
-                                ? "In Use"
-                                : "Start Turf"}
-                            </Button>
-                            <h3>{ground}</h3>
-                            {activeTables
-                              .filter((t) => t.table === ground && !t.isClosed) // ✅ Get only tables that are NOT closed
-                              .map((activeTable) => (
-                                <div
-                                  key={activeTable.id}
-                                  style={{
-                                    fontSize: "14px",
-                                    fontWeight: "bold",
-                                    bottom: "108px",
-                                    right: "10px",
-                                    position: "relative",
-                                  }}
-                                >
-                                  <p>👤 {activeTable.name}</p>
-                                  <p>📞 {activeTable.phone}</p>
-                                </div>
-                              ))}
-                          </div>
-                        );
-                      })}
+                                ? "red"
+                                : "rgba(0, 89, 255, 0.93)",
+                              position: "relative",
+                              bottom: "10px",
+                              cursor: activeTables.some(
+                                (t) => t.table === ground && !t.isClosed
+                              )
+                                ? "not-allowed"
+                                : "pointer",
+                              color: "white",
+                            }}
+                          >
+                            {activeTables.some(
+                              (t) => t.table === ground && !t.isClosed
+                            )
+                              ? "In Use"
+                              : "Start Turf"}
+                          </Button>
+                          <h3>{ground}</h3>
+                          {activeTables
+                            .filter((t) => t.table === ground && !t.isClosed)
+                            .map((activeTable) => (
+                              <div
+                                key={activeTable.id}
+                                style={{
+                                  fontSize: "14px",
+                                  fontWeight: "bold",
+                                  bottom: "108px",
+                                  right: "10px",
+                                  position: "relative",
+                                }}
+                              >
+                                <p>👤 {activeTable.name}</p>
+                                <p>📞 {activeTable.phone}</p>
+                              </div>
+                            ))}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -1512,7 +1524,7 @@ const PoolBillingSystem = ({
                     position: "absolute",
                     top: "90px",
                     left: "90px",
-                    zIndex: 9, // Ensure it’s above other elements
+                    zIndex: 9,
                   }}
                 >
                   Add Regular Customer
@@ -1535,99 +1547,96 @@ const PoolBillingSystem = ({
                     flexWrap: "wrap",
                   }}
                 >
-                  {config.tables.map((table) => {
-                    return (
-                      <div
-                        key={table}
+                  {config.tables.map((table) => (
+                    <div
+                      key={table}
+                      style={{
+                        position: "relative",
+                        textAlign: "center",
+                        width: "250px",
+                        height: "250px",
+                      }}
+                    >
+                      <img
+                        src={pool}
+                        alt={table}
                         style={{
-                          position: "relative",
-                          textAlign: "center",
                           width: "250px",
                           height: "250px",
+                          borderRadius: "5px",
+                          margin: 0,
+                          padding: 0,
                         }}
-                      >
-                        <img
-                          src={pool}
-                          alt={table}
-                          style={{
-                            width: "250px",
-                            height: "250px",
-                            borderRadius: "5px",
-                            margin: 0,
-                            padding: 0,
-                          }}
-                        />
-                        <Button
-                          type="primary"
-                          onClick={() => {
-                            setSelectedTable(table);
-                            setIsModalOpen(true);
-                          }}
-                          disabled={activeTables.some(
-                            (t) => t.table === table && !t.isClosed
-                          )} // ✅ Disable if the table is active
-                          style={{
-                            backgroundColor: activeTables.some(
-                              (t) => t.table === table && !t.isClosed
-                            )
-                              ? "red"
-                              : "rgb(0, 89, 255)",
-                            marginTop: "10px",
-                            cursor: activeTables.some(
-                              (t) => t.table === table && !t.isClosed
-                            )
-                              ? "not-allowed" // Show disabled cursor
-                              : "pointer",
-                            bottom: activeTables.some(
-                              (t) => t.table === table && !t.isClosed
-                            )
-                              ? "180px"
-                              : "150px",
-                            color: "white",
-                          }}
-                        >
-                          {activeTables.some(
+                      />
+                      <Button
+                        type="primary"
+                        onClick={() => {
+                          setSelectedTable(table);
+                          setIsModalOpen(true);
+                        }}
+                        disabled={activeTables.some(
+                          (t) => t.table === table && !t.isClosed
+                        )}
+                        style={{
+                          backgroundColor: activeTables.some(
                             (t) => t.table === table && !t.isClosed
                           )
-                            ? "In Use"
-                            : "Start Table"}
-                        </Button>
-                        <h3 style={{ position: "relative", bottom: "80px" }}>
-                          {table}
-                        </h3>
-                        {activeTables
-                          .filter((t) => t.table === table && !t.isClosed) // ✅ Get only tables that are NOT closed
-                          .map((activeTable) => (
-                            <div
-                              key={activeTable.id}
-                              style={{
-                                fontSize: "14px",
-                                fontWeight: "bold",
-                                bottom: "200px",
-                                position: "relative",
-                              }}
-                            >
-                              <p>👤 {activeTable.name}</p>
-                              <p>📞 {activeTable.phone}</p>
-                            </div>
-                          ))}
-                      </div>
-                    );
-                  })}
+                            ? "red"
+                            : "rgb(0, 89, 255)",
+                          marginTop: "10px",
+                          cursor: activeTables.some(
+                            (t) => t.table === table && !t.isClosed
+                          )
+                            ? "not-allowed"
+                            : "pointer",
+                          bottom: activeTables.some(
+                            (t) => t.table === table && !t.isClosed
+                          )
+                            ? "180px"
+                            : "150px",
+                          color: "white",
+                        }}
+                      >
+                        {activeTables.some(
+                          (t) => t.table === table && !t.isClosed
+                        )
+                          ? "In Use"
+                          : "Start Table"}
+                      </Button>
+                      <h3 style={{ position: "relative", bottom: "80px" }}>
+                        {table}
+                      </h3>
+                      {activeTables
+                        .filter((t) => t.table === table && !t.isClosed)
+                        .map((activeTable) => (
+                          <div
+                            key={activeTable.id}
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: "bold",
+                              bottom: "200px",
+                              position: "relative",
+                            }}
+                          >
+                            <p>👤 {activeTable.name}</p>
+                            <p>📞 {activeTable.phone}</p>
+                          </div>
+                        ))}
+                    </div>
+                  ))}
                 </div>
               </>
             )}
           </>
         )}
 
-        {/* Table */}
         <Table
           dataSource={sortedTables}
           rowKey="id"
           columns={[
-            { title: "Table", dataIndex: "table", key: "table" },
-            { title: "Customer Name", dataIndex: "name", key: "name" },
-            { title: "Phone Number", dataIndex: "phone", key: "phone" },
+            { title: "Table No.", dataIndex: "table", key: "table" },
+            { title: "Name", dataIndex: "name", key: "name" },
+            { title: "Mobile Number", dataIndex: "phone", key: "phone" },
             {
               title: "Start Time",
               dataIndex: "startTime",
@@ -1641,22 +1650,16 @@ const PoolBillingSystem = ({
               render: (t) => (t ? moment(t).format("hh:mm A") : "—"),
             },
             {
-              title: "Duration (min)",
-              dataIndex: "duration",
+              title: "Duration",
+              dataIndex: "durationString",
               key: "duration",
-              render: (d) => (d ? Math.round(d) : "—"), // Ensuring integer display
+              render: (d) => d || "—",
             },
             {
               title: "Ordered Items",
               dataIndex: "orderedItems",
               key: "orderedItems",
               render: (items) => (items?.length ? aggregateItems(items) : "—"),
-            },
-            {
-              title: "Total Amount (Rs)",
-              dataIndex: "totalAmount",
-              key: "totalAmount",
-              render: (a) => (a ? Math.round(a) : "—"), // Ensuring integer display,
             },
             {
               title: "Cash (Rs)",
@@ -1671,20 +1674,23 @@ const PoolBillingSystem = ({
               render: (a) => (a !== undefined ? Math.round(a) : "0"),
             },
             {
+              title: "Total Amount (Rs)",
+              dataIndex: "totalAmount",
+              key: "totalAmount",
+              render: (a) => (a ? Math.round(a) : "—"),
+            },
+            {
               title: "Actions",
               key: "actions",
               render: (_, record) =>
                 record.name === "FOOD" ? (
                   <div style={{ display: "flex", gap: "10px" }}>
-                    {console.log("Dropdown menu for FOOD:", getMenu(record.id))}
-                    {console.log("Rendering row:", record)}
                     <Dropdown
                       overlay={getMenu(record.id)}
                       trigger={["click"]}
-                      visible={activeDropdownTable === record.id} // ✅ Uses unique ID instead of table name
-                      onVisibleChange={
-                        (visible) =>
-                          setActiveDropdownTable(visible ? record.id : null) // ✅ Now tracks by unique ID
+                      visible={activeDropdownTable === record.id}
+                      onVisibleChange={(visible) =>
+                        setActiveDropdownTable(visible ? record.id : null)
                       }
                     >
                       <Button
@@ -1725,15 +1731,13 @@ const PoolBillingSystem = ({
                     <Dropdown
                       overlay={getMenu(record.id)}
                       trigger={["click"]}
-                      visible={activeDropdownTable === record.id} // ✅ Uses unique ID instead of table name
-                      onVisibleChange={
-                        (visible) =>
-                          setActiveDropdownTable(visible ? record.id : null) // ✅ Now tracks by unique ID
+                      visible={activeDropdownTable === record.id}
+                      onVisibleChange={(visible) =>
+                        setActiveDropdownTable(visible ? record.id : null)
                       }
                     >
                       <Button type="default">Add</Button>
                     </Dropdown>
-
                     <Button
                       type="primary"
                       onClick={() => showDropdown("delete", record.id)}
@@ -1745,10 +1749,9 @@ const PoolBillingSystem = ({
             },
           ]}
           style={{ marginTop: 20 }}
-          loading={isLoading} // Show loading spinner on table
+          loading={isLoading}
         />
 
-        {/* Modal */}
         <Modal
           title="Start New Game"
           open={isModalOpen}
@@ -1809,11 +1812,7 @@ const PoolBillingSystem = ({
             <Form.Item
               name="dues"
               label="Initial Dues (Rs)"
-              rules={[
-                {
-                  message: "Dues must be a non-negative number",
-                },
-              ]}
+              rules={[{ message: "Dues must be a non-negative number" }]}
             >
               <Input type="number" min={0} />
             </Form.Item>
@@ -1838,13 +1837,9 @@ const PoolBillingSystem = ({
             <Form.Item name="phone" label="Phone Number">
               <Input />
             </Form.Item>
-
-            {/* Only Allow Editing Closing Time */}
             <Form.Item name="endTime" label="Closing Time">
               <Input type="datetime-local" onChange={handleEndTimeChange} />
             </Form.Item>
-
-            {/* Ordered Items List with Remove Button */}
             <h3>Ordered Items</h3>
             {Object.entries(
               (editData?.orderedItems || []).reduce((acc, item) => {
@@ -1887,23 +1882,18 @@ const PoolBillingSystem = ({
                 </div>
               </div>
             ))}
-
-            {/* Add New Item Dropdown */}
             <Dropdown overlay={getEditMenu()} trigger={["click"]}>
               <Button type="default">Add Item</Button>
             </Dropdown>
-
             <Form.Item name="totalAmount" label="Total Amount (Rs)">
               <Input disabled />
             </Form.Item>
-
             <Form.Item name="cashAmount" label="Cash Amount (Rs)">
               <Input type="number" min={0} />
             </Form.Item>
             <Form.Item name="onlineAmount" label="Online Amount (Rs)">
               <Input type="number" min={0} />
             </Form.Item>
-
             <Form.Item label="Payment Option">
               <Select
                 value={selectedPaymentOption}
@@ -1918,7 +1908,6 @@ const PoolBillingSystem = ({
                 ))}
               </Select>
             </Form.Item>
-
             <Form.Item>
               <Button type="primary" htmlType="submit">
                 Save Changes
@@ -1983,7 +1972,7 @@ const PoolBillingSystem = ({
                       <Input.Password />
                     </Form.Item>
                     <Form.Item>
-                      <Button type="primary" htmlType="submit ">
+                      <Button type="primary" htmlType="submit">
                         {dropdownAction === "edit" ? "Edit" : "Delete"}
                       </Button>
                     </Form.Item>
@@ -1999,5 +1988,4 @@ const PoolBillingSystem = ({
 };
 
 export default PoolBillingSystem;
-
 export { ITEM_PRICES };
