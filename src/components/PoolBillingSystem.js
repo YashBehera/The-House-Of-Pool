@@ -19,9 +19,9 @@ import {
   getDocs,
   updateDoc,
 } from "firebase/firestore";
-import moment from "moment";
+import moment from "moment"; // ✅ Ensure moment.js is installed (npm install moment)
 import React, { useEffect, useRef, useState } from "react";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4 } from "uuid"; // Import UUID (If not installed, run: npm install uuid)
 import pool from "./8ball.png";
 import { auth, db } from "./firebase";
 import logo1 from "./HOP3.png"; // Assuming same as Navbar
@@ -202,7 +202,9 @@ const PoolBillingSystem = ({
     if (!stock[item]) stock[item] = { available: 0, sold: 0 };
 
     if (quantityChange > 0 && stock[item].available < quantityChange) {
-      alert(`Not enough ${item} in stock! Available: ${stock[item].available}, Requested: ${quantityChange}`);
+      alert(
+        `Not enough ${item} in stock! Available: ${stock[item].available}, Requested: ${quantityChange}`
+      );
       setActiveTables((prevTables) => {
         const updatedTables = prevTables.map((t) => {
           if (t.id !== id) return t;
@@ -241,7 +243,9 @@ const PoolBillingSystem = ({
     setActiveTables((prevTables) => {
       const updatedTables = [...prevTables];
       saveTables(selectedDate, updatedTables, selectedLocation);
-      console.log(`Synced ${quantityChange} ${item} for table ${id} to Firestore`);
+      console.log(
+        `Synced ${quantityChange} ${item} for table ${id} to Firestore`
+      );
       return updatedTables;
     });
 
@@ -277,25 +281,33 @@ const PoolBillingSystem = ({
     const unsubscribe = onSnapshot(
       doc(db, "tables", `${location}_${date}`),
       (docSnap) => {
-        const remoteTables = docSnap.exists()
+        let remoteTables = docSnap.exists()
           ? docSnap.data().data.map((table) => ({
               ...table,
-              startTime: table.startTime ? moment(table.startTime).toDate() : null,
+              startTime: table.startTime
+                ? moment(table.startTime).toDate()
+                : null,
               endTime: table.endTime ? moment(table.endTime).toDate() : null,
             }))
           : [];
 
         setActiveTables((prevTables) => {
           const mergedTables = prevTables.map((localTable) => {
-            const remoteTable = remoteTables.find((rt) => rt.id === localTable.id);
+            const remoteTable = remoteTables.find(
+              (rt) => rt.id === localTable.id
+            );
             if (!remoteTable) return localTable;
 
-            const hasPendingUpdates = Object.keys(pendingUpdates.current).some((key) =>
-              key.startsWith(`${localTable.id}-`)
+            // Preserve local isClosed if it’s true, even if remote is false
+            const hasPendingUpdates = Object.keys(pendingUpdates.current).some(
+              (key) => key.startsWith(`${localTable.id}-`)
             );
-            if (hasPendingUpdates) {
-              console.log(`Preserving local orderedItems for ${localTable.id}: ${localTable.orderedItems.length}`);
-              return { ...remoteTable, orderedItems: localTable.orderedItems };
+            if (hasPendingUpdates || localTable.isClosed) {
+              return {
+                ...remoteTable,
+                orderedItems: localTable.orderedItems,
+                isClosed: localTable.isClosed,
+              };
             }
             return remoteTable;
           });
@@ -303,7 +315,7 @@ const PoolBillingSystem = ({
           const newTables = remoteTables.filter(
             (rt) => !prevTables.some((lt) => lt.id === rt.id)
           );
-          const updatedTables = [...mergedTables, ...newTables];
+          let updatedTables = [...mergedTables, ...newTables];
 
           if (!updatedTables.some((table) => table.name === "FOOD")) {
             updatedTables.push({
@@ -328,7 +340,10 @@ const PoolBillingSystem = ({
         callback(remoteTables);
       },
       (error) => {
-        console.error(`Firestore listener error for ${location}_${date}:`, error);
+        console.error(
+          `Firestore listener error for ${location}_${date}:`,
+          error
+        );
         callback([]);
       }
     );
@@ -463,11 +478,20 @@ const PoolBillingSystem = ({
       endTime
     ); // Include existing orderedItems
 
+    setActiveTables((prevTables) =>
+      prevTables.map((t) =>
+        t.id === id
+          ? { ...t, endTime, totalAmount, duration, isClosed: true }
+          : t
+      )
+    );
+
     setEditData({
       ...tableToEdit,
       endTime,
       totalAmount, // Initial totalAmount includes items (Step 3)
       duration,
+      isClosed: true, // Reflect in editData too
     });
     setSelectedPaymentOption(tableToEdit.paymentOption || "Paid"); // Load stored payment option or default to "Paid"
     setIsEditModalOpen(true);
@@ -500,7 +524,10 @@ const PoolBillingSystem = ({
 
     setEditData((prev) => {
       const updatedItems = [...prev.orderedItems, item];
-      const { totalAmount } = calculateTotalAmount({ ...prev, orderedItems: updatedItems }, prev.endTime);
+      const { totalAmount } = calculateTotalAmount(
+        { ...prev, orderedItems: updatedItems },
+        prev.endTime
+      );
       editForm.setFieldsValue({ totalAmount });
       return { ...prev, orderedItems: updatedItems, totalAmount };
     });
@@ -676,13 +703,17 @@ const PoolBillingSystem = ({
     const key = `${id}-${itemToRemove}`;
     const clickId = `${key}-${Date.now()}`;
     const currentTable = activeTables.find((t) => t.id === id);
-    const itemCount = currentTable?.orderedItems.filter((item) => item === itemToRemove).length || 0;
+    const itemCount =
+      currentTable?.orderedItems.filter((item) => item === itemToRemove)
+        .length || 0;
     if (!pendingUpdates.current[key]) pendingUpdates.current[key] = [];
     for (let i = 0; i < itemCount; i++) pendingUpdates.current[key].push(-1);
 
     if (isEditModalOpen && editData?.id === id) {
       setEditData((prev) => {
-        const updatedItems = prev.orderedItems.filter((item) => item !== itemToRemove);
+        const updatedItems = prev.orderedItems.filter(
+          (item) => item !== itemToRemove
+        );
         const { totalAmount } = calculateTotalAmount(
           { ...prev, orderedItems: updatedItems },
           prev.endTime
@@ -695,7 +726,10 @@ const PoolBillingSystem = ({
     setActiveTables((prevTables) => {
       const updatedTables = prevTables.map((t) => {
         if (t.id !== id) return t;
-        return { ...t, orderedItems: t.orderedItems.filter((item) => item !== itemToRemove) };
+        return {
+          ...t,
+          orderedItems: t.orderedItems.filter((item) => item !== itemToRemove),
+        };
       });
       return updatedTables;
     });
@@ -720,18 +754,18 @@ const PoolBillingSystem = ({
   };
 
   const updateTable = (values) => {
-    setActiveTables((prevTables) =>
-      prevTables.map((t) => {
+    setActiveTables((prevTables) => {
+      const updatedTables = prevTables.map((t) => {
         if (t.id !== editData.id) return t;
 
         const newEndTime = values.endTime
           ? new Date(values.endTime)
-          : new Date();
+          : editData.endTime || new Date();
         const newDuration = Math.max(
           Math.round((newEndTime - new Date(t.startTime)) / 60000),
           0
         );
-        const updatedOrderedItems = editData.orderedItems;
+        const updatedOrderedItems = editData.orderedItems || t.orderedItems;
         const { totalAmount } = calculateTotalAmount(
           { ...t, orderedItems: updatedOrderedItems },
           newEndTime
@@ -739,15 +773,16 @@ const PoolBillingSystem = ({
 
         const cashAmount = parseFloat(values.cashAmount) || 0;
         const onlineAmount = parseFloat(values.onlineAmount) || 0;
-
         let updatedDues = 0;
+
         if (selectedPaymentOption !== "Paid") {
           const selectedCustomer = regularCustomers.find(
             (c) => c.name === selectedPaymentOption
           );
           if (selectedCustomer) {
             updatedDues = totalAmount - (cashAmount + onlineAmount);
-            updateCustomerDues(selectedCustomer.id, updatedDues);
+            if (updatedDues > 0)
+              updateCustomerDues(selectedCustomer.id, updatedDues);
           }
         }
 
@@ -759,17 +794,21 @@ const PoolBillingSystem = ({
           duration: newDuration,
           orderedItems: updatedOrderedItems,
           totalAmount,
-          cashAmount, // Store cash amount
-          onlineAmount, // Store online amount
+          cashAmount,
+          onlineAmount,
           isClosed: true,
-          dues: updatedDues > 0 ? updatedDues : 0, // Track dues in table entry
-          paymentOption: selectedPaymentOption, // Store the selected payment option
+          dues: updatedDues > 0 ? updatedDues : 0,
+          paymentOption: selectedPaymentOption,
         };
-      })
-    );
+      });
+
+      // Explicitly save to Firestore after update
+      saveTables(selectedDate, updatedTables, selectedLocation);
+      return updatedTables;
+    });
 
     setIsEditModalOpen(false);
-    setSelectedPaymentOption("Paid"); // Reset to default
+    setSelectedPaymentOption("Paid");
   };
 
   const handleEdit = (record) => {
@@ -863,28 +902,32 @@ const PoolBillingSystem = ({
     let unsubscribe = () => {};
     const loadData = () => {
       setIsLoading(true);
-      unsubscribe = getTablesByDate(selectedDate, selectedLocation, (tables) => {
-        const updatedTables = tables || [];
-        if (!updatedTables.some((table) => table.name === "FOOD")) {
-          updatedTables.push({
-            id: uuidv4(),
-            table: "Food",
-            name: "FOOD",
-            phone: "",
-            startTime: null,
-            endTime: null,
-            duration: null,
-            orderedItems: [],
-            totalAmount: 0,
-            isClosed: false,
-            location: selectedLocation,
-            cashAmount: 0,
-            onlineAmount: 0,
-          });
+      unsubscribe = getTablesByDate(
+        selectedDate,
+        selectedLocation,
+        (tables) => {
+          const updatedTables = tables || [];
+          if (!updatedTables.some((table) => table.name === "FOOD")) {
+            updatedTables.push({
+              id: uuidv4(),
+              table: "Food",
+              name: "FOOD",
+              phone: "",
+              startTime: null,
+              endTime: null,
+              duration: null,
+              orderedItems: [],
+              totalAmount: 0,
+              isClosed: false,
+              location: selectedLocation,
+              cashAmount: 0,
+              onlineAmount: 0,
+            });
+          }
+          setActiveTables(updatedTables);
+          setIsLoading(false);
         }
-        setActiveTables(updatedTables);
-        setIsLoading(false);
-      });
+      );
     };
     if (isAuthenticated) loadData();
     else {
