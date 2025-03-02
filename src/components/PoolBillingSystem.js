@@ -1119,6 +1119,10 @@ const PoolBillingSystem = ({
   }, [selectedLocation]);
 
   const showDropdown = (action, id) => {
+    if (!isAuthenticated || auth.currentUser?.email !== "hop@gmail.com") {
+      alert("You do not have permission to access this feature.");
+      return;
+    }
     setDropdownAction(action);
     setDropdownRecordId(id);
     setIsDropdownOpen(true);
@@ -1126,15 +1130,19 @@ const PoolBillingSystem = ({
 
   const handleLoginSubmit = async (values) => {
     try {
-      await signInWithEmailAndPassword(auth, values.email, values.password);
-      if (dropdownAction === "edit") {
-        const record = activeTables.find((t) => t.id === dropdownRecordId);
-        if (record) handleEdit(record);
-      } else if (dropdownAction === "delete") {
-        deleteTable(dropdownRecordId);
+      await signInWithEmailAndPassword(auth, values.email);
+      if (values.email === "hop@gmail.com") {
+        if (dropdownAction === "edit") {
+          const record = activeTables.find((t) => t.id === dropdownRecordId);
+          if (record) handleEdit(record);
+        } else if (dropdownAction === "delete") {
+          deleteTable(dropdownRecordId);
+        }
+        setIsDropdownOpen(false);
+        loginForm.resetFields();
+      } else {
+        alert("You do not have permission to access this feature.");
       }
-      setIsDropdownOpen(false);
-      loginForm.resetFields();
     } catch (error) {
       console.error("Login failed:", error);
       alert("Invalid email or password. Please try again.");
@@ -1722,7 +1730,7 @@ const PoolBillingSystem = ({
                               (t) => t.table === ground && !t.isClosed
                             )
                               ? "In Use"
-                              : "Book Turf"}
+                              : "Start Turf"}
                           </Button>
                           <h3>{ground}</h3>
                           {activeTables
