@@ -23,9 +23,13 @@ import {
   onSnapshot,
   collection,
   updateDoc,
+  setDoc,
+  getDocs,
+  query,
+  where,
 } from "firebase/firestore";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import logo1 from "./HOP3.png"; // Ensure these images are available
+import logo1 from "./HOP3.png";
 import logo2 from "./HOP5.png";
 import { db, auth } from "./firebase";
 const { Title } = Typography;
@@ -41,10 +45,10 @@ const SalesReport = ({
   const [selectedDate, setSelectedDate] = useState(
     moment().format("YYYY-MM-DD")
   );
-  const [reportType, setReportType] = useState("daily"); // Daily, Weekly, Monthly
-  const [monthlyTotalRevenue, setMonthlyTotalRevenue] = useState(0); // New state for monthly total
+  const [reportType, setReportType] = useState("daily");
+  const [monthlyTotalRevenue, setMonthlyTotalRevenue] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [regularCustomers, setRegularCustomers] = useState([]); // New state for regular customers
+  const [regularCustomers, setRegularCustomers] = useState([]);
   const [isEditCustomerModalOpen, setIsEditCustomerModalOpen] = useState(false);
   const [editCustomerData, setEditCustomerData] = useState(null);
   const [editCustomerForm] = Form.useForm();
@@ -55,6 +59,13 @@ const SalesReport = ({
   const [loginForm] = Form.useForm();
   const dropdownRef = useRef(null);
   const [dropdownActionCustomer, setDropdownActionCustomer] = useState(null);
+  const [monthlyData, setMonthlyData] = useState([]);
+  const [yearlyData, setYearlyData] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState(null);
+  const [allMonthTables, setAllMonthTables] = useState([]);
+  const [isPaymentHistoryModalOpen, setIsPaymentHistoryModalOpen] =
+    useState(false);
+  const [paymentHistory, setPaymentHistory] = useState([]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -76,25 +87,23 @@ const SalesReport = ({
           id: doc.id,
           ...doc.data(),
         }));
-        console.log("Fetched regular customers:", customers); // Debug log
         setRegularCustomers(customers);
       },
       (error) => {
         console.error("Error fetching regular customers:", error);
       }
     );
-    return () => unsubscribe(); // Cleanup listener
+    return () => unsubscribe();
   }, []);
 
   const getTablesByDate = async (date, location) => {
     const docSnap = await getDoc(doc(db, "tables", `${location}_${date}`));
     if (!docSnap.exists()) return [];
-
     return docSnap.data().data.map((table) => ({
       ...table,
       startTime: table.startTime ? moment(table.startTime).toDate() : null,
       endTime: table.endTime ? moment(table.endTime).toDate() : null,
-      cashAmount: table.cashAmount || 0, // Ensure defaults
+      cashAmount: table.cashAmount || 0,
       onlineAmount: table.onlineAmount || 0,
     }));
   };
@@ -113,21 +122,49 @@ const SalesReport = ({
       (sum, total) => sum + total,
       0
     );
-    const foodRow = tables.find((entry) => entry.name === "FOOD"); // Use all tables, not just closed
+    const foodRow = tables.find((entry) => entry.name === "FOOD");
     const foodItemsRevenue = foodRow
       ? foodRow.orderedItems.reduce(
           (sum, item) => sum + (ITEM_PRICES[item] || 0),
           0
         )
       : 0;
-    console.log(totalGameRevenue + foodItemsRevenue);
-    return totalGameRevenue + foodItemsRevenue;
+
+    // Include payments from the payments collection for the specific date
+    const paymentsQuery = query(
+      collection(db, "payments"),
+      where("date", "==", date),
+      where("location", "==", selectedLocation)
+    );
+    const paymentsSnapshot = await getDocs(paymentsQuery);
+    const paymentsRevenue = paymentsSnapshot.docs.reduce((sum, doc) => {
+      const data = doc.data();
+      return sum + (data.cashAmount || 0) + (data.onlineAmount || 0);
+    }, 0);
+
+    return totalGameRevenue + foodItemsRevenue + paymentsRevenue;
+  };
+
+  const saveTables = async (date, tables, location) => {
+    const formattedTables = tables.map((table) => ({
+      ...table,
+      startTime: table.startTime
+        ? new Date(table.startTime).toISOString()
+        : null,
+      endTime: table.endTime ? new Date(table.endTime).toISOString() : null,
+      cashAmount: table.cashAmount || 0,
+      onlineAmount: table.onlineAmount || 0,
+    }));
+    await setDoc(doc(db, "tables", `${location}_${date}`), {
+      data: formattedTables,
+    });
   };
 
   const fetchSalesData = async () => {
     setLoading(true);
     try {
       if (reportType === "daily") {
+        // Fetch sales data only for the selected date from the Navbar
         const tables =
           (await getTablesByDate(selectedDate, selectedLocation)) || [];
         setActiveTables(tables);
@@ -135,28 +172,10 @@ const SalesReport = ({
         const startOfWeek = moment(selectedDate).startOf("week");
         const endOfWeek = moment(selectedDate).endOf("week");
         const weekTables = [];
+        const days = [];
         for (
           let day = startOfWeek.clone();
           day.isSameOrBefore(endOfWeek);
-          day.add(1, "day")
-        ) {
-          const dayTables = await getTablesByDate(
-            day.format("YYYY-MM-DD"),
-            selectedLocation
-          );
-          weekTables.push(...dayTables);
-        }
-        setActiveTables(weekTables);
-      } else if (reportType === "monthly") {
-        const startOfMonth = moment(selectedDate).startOf("month");
-        const endOfMonth = moment(selectedDate).endOf("month");
-        const monthTables = [];
-        const foodRowEntries = [];
-        const days = [];
-
-        for (
-          let day = startOfMonth.clone();
-          day.isSameOrBefore(endOfMonth);
           day.add(1, "day")
         ) {
           days.push(day.format("YYYY-MM-DD"));
@@ -164,36 +183,100 @@ const SalesReport = ({
 
         const dailyDataPromises = days.map(async (day) => {
           const dayTables = await getTablesByDate(day, selectedLocation);
-          const dailyTotal = await calculateDailyTotalRevenue(day);
-          return { tables: dayTables, dailyTotal };
+          return dayTables;
         });
 
         const dailyData = await Promise.all(dailyDataPromises);
-        let monthlyTotal = 0;
+        dailyData.forEach((tables) => weekTables.push(...tables));
+        setActiveTables(weekTables);
+      } else if (reportType === "monthly" || reportType === "yearly") {
+        const endDate = moment().endOf("month");
+        const startDate = moment().subtract(11, "months").startOf("month");
+        const allTables = [];
+        const monthlySales = {};
+        const yearlySales = {};
 
-        dailyData.forEach(({ tables, dailyTotal }) => {
-          monthlyTotal += dailyTotal;
-          const foodRows = tables.filter((entry) => entry.name === "FOOD");
-          const nonFoodTables = tables.filter((entry) => entry.name !== "FOOD");
-          monthTables.push(...nonFoodTables);
-          foodRowEntries.push(...foodRows);
-        });
-
-        if (foodRowEntries.length > 0) {
-          const mergedFoodRow = {
-            ...foodRowEntries[0],
-            orderedItems: [].concat(
-              ...foodRowEntries.map((entry) => entry.orderedItems)
-            ),
-          };
-          monthTables.push(mergedFoodRow);
+        const days = [];
+        for (
+          let day = startDate.clone();
+          day.isSameOrBefore(endDate);
+          day.add(1, "day")
+        ) {
+          days.push(day.format("YYYY-MM-DD"));
         }
 
-        setActiveTables(monthTables);
-        setMonthlyTotalRevenue(Math.round(monthlyTotal));
+        const chunkSize = 30;
+        const dailyDataPromises = [];
+        for (let i = 0; i < days.length; i += chunkSize) {
+          const chunk = days.slice(i, i + chunkSize);
+          dailyDataPromises.push(
+            Promise.all(
+              chunk.map(async (day) => {
+                const dayTables = await getTablesByDate(day, selectedLocation);
+                const dailyTotal = await calculateDailyTotalRevenue(day);
+                return { day, tables: dayTables, dailyTotal };
+              })
+            )
+          );
+        }
+
+        const chunkedData = await Promise.all(dailyDataPromises);
+        const dailyData = chunkedData.flat();
+
+        dailyData.forEach(({ day, tables, dailyTotal }) => {
+          const monthKey = moment(day).format("YYYY-MM");
+          const yearKey = moment(day).format("YYYY");
+
+          if (tables.length > 0) {
+            if (!monthlySales[monthKey]) {
+              monthlySales[monthKey] = { totalRevenue: 0, tables: [] };
+            }
+            monthlySales[monthKey].totalRevenue += dailyTotal;
+            monthlySales[monthKey].tables.push(...tables);
+
+            if (!yearlySales[yearKey]) {
+              yearlySales[yearKey] = { totalRevenue: 0, tables: [] };
+            }
+            yearlySales[yearKey].totalRevenue += dailyTotal;
+            yearlySales[yearKey].tables.push(...tables);
+
+            allTables.push(...tables.map((table) => ({ ...table, monthKey })));
+          }
+        });
+
+        const monthlyDataArray = Object.entries(monthlySales).map(
+          ([month, data]) => ({
+            key: month,
+            month: moment(month, "YYYY-MM").format("MMMM YYYY"),
+            totalRevenue: Math.round(data.totalRevenue),
+          })
+        );
+
+        const yearlyDataArray = Object.entries(yearlySales).map(
+          ([year, data]) => ({
+            key: year,
+            year,
+            totalRevenue: Math.round(data.totalRevenue),
+          })
+        );
+
+        if (reportType === "monthly") {
+          setAllMonthTables(allTables);
+          setActiveTables([]);
+          setMonthlyTotalRevenue(
+            monthlyDataArray.reduce((sum, entry) => sum + entry.totalRevenue, 0)
+          );
+          setMonthlyData(monthlyDataArray);
+        } else if (reportType === "yearly") {
+          setActiveTables(allTables);
+          setMonthlyTotalRevenue(
+            yearlyDataArray.reduce((sum, entry) => sum + entry.totalRevenue, 0)
+          );
+          setYearlyData(yearlyDataArray);
+        }
       }
     } catch (error) {
-      console.error(error);
+      console.error("Error fetching sales data:", error);
     } finally {
       setLoading(false);
     }
@@ -201,17 +284,25 @@ const SalesReport = ({
 
   useEffect(() => {
     fetchSalesData();
-  }, [selectedDate, selectedLocation, reportType]);
+  }, [selectedLocation, reportType, selectedDate]); // Added selectedDate as dependency
+
+  const handleMonthClick = (monthKey) => {
+    const monthTables = allMonthTables.filter(
+      (table) => table.monthKey === monthKey
+    );
+    setActiveTables(monthTables);
+    setSelectedMonth(monthKey);
+  };
 
   const showLoginDropdownForEdit = (customer) => {
     setDropdownActionCustomer(customer);
     setIsDropdownOpen(true);
   };
 
-  // Handle login submission
   const handleLoginSubmit = async (values) => {
     try {
       await signInWithEmailAndPassword(auth, values.email, values.password);
+      setIsAuthenticated(true);
       if (dropdownActionCustomer) {
         handleEditCustomer(dropdownActionCustomer);
       }
@@ -230,25 +321,64 @@ const SalesReport = ({
       name: customer.name,
       phone: customer.phone,
       dues: customer.dues,
-      paymentAmount: 0, // Default payment amount
+      cashPaymentAmount: 0,
+      onlinePaymentAmount: 0,
     });
   };
 
   const updateCustomerDues = async (values) => {
     if (!editCustomerData) return;
+
     const customerRef = doc(db, "regularCustomers", editCustomerData.id);
     const currentDues = editCustomerData.dues || 0;
-    const paymentAmount = parseFloat(values.paymentAmount) || 0;
-    const newDues = Math.max(0, currentDues - paymentAmount); // Ensure dues don’t go negative
+    const cashPaymentAmount = parseFloat(values.cashPaymentAmount) || 0;
+    const onlinePaymentAmount = parseFloat(values.onlinePaymentAmount) || 0;
+    const totalPayment = cashPaymentAmount + onlinePaymentAmount;
+    const newDues = Math.max(0, currentDues - totalPayment);
+
     await updateDoc(customerRef, { dues: newDues });
+
+    if (totalPayment > 0) {
+      const tables =
+        (await getTablesByDate(selectedDate, selectedLocation)) || [];
+      let foodTable = tables.find((entry) => entry.name === "FOOD");
+      if (!foodTable) {
+        foodTable = {
+          id: `${selectedDate}-FOOD`,
+          table: "Food",
+          name: "FOOD",
+          phone: "",
+          startTime: null,
+          endTime: null,
+          duration: null,
+          orderedItems: [],
+          totalAmount: 0,
+          isClosed: false,
+          cashAmount: 0,
+          onlineAmount: 0,
+        };
+        tables.push(foodTable);
+      }
+
+      foodTable.cashAmount = (foodTable.cashAmount || 0) + cashPaymentAmount;
+      foodTable.onlineAmount =
+        (foodTable.onlineAmount || 0) + onlinePaymentAmount;
+      foodTable.totalAmount = (foodTable.totalAmount || 0) + totalPayment;
+
+      await saveTables(selectedDate, tables, selectedLocation);
+
+      if (reportType === "daily") {
+        setActiveTables(tables);
+      }
+    }
+
     setIsEditCustomerModalOpen(false);
     editCustomerForm.resetFields();
   };
 
   const handleShowCustomerTables = async (customer) => {
     const allTables = [];
-    // Fetch tables for all dates in the selected location (simplified for this example)
-    const dates = [selectedDate]; // You could expand this to fetch all dates if needed
+    const dates = [selectedDate];
     for (const date of dates) {
       const tables = await getTablesByDate(date, selectedLocation);
       const customerTables = tables.filter(
@@ -260,11 +390,33 @@ const SalesReport = ({
     setIsShowTablesModalOpen(true);
   };
 
-  if (
-    !activeTables ||
-    !Array.isArray(activeTables) ||
-    activeTables.length === 0
-  ) {
+  const handleShowPaymentHistory = async (customer) => {
+    setLoading(true);
+    try {
+      const paymentsCollection = collection(db, "payments");
+      const q = query(
+        paymentsCollection,
+        where("customerId", "==", customer.id),
+        where("location", "==", selectedLocation)
+      );
+      const querySnapshot = await getDocs(q);
+      const paymentRecords = querySnapshot.docs.map((doc) => ({
+        date: doc.data().date,
+        cashAmount: doc.data().cashAmount || 0,
+        onlineAmount: doc.data().onlineAmount || 0,
+        totalAmount: doc.data().totalAmount || 0,
+      }));
+      setPaymentHistory(paymentRecords);
+      setEditCustomerData(customer);
+      setIsPaymentHistoryModalOpen(true);
+    } catch (error) {
+      console.error("Error fetching payment history:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!activeTables || !Array.isArray(activeTables)) {
     return (
       <div>
         <Navbar
@@ -274,85 +426,13 @@ const SalesReport = ({
           setSelectedLocation={setSelectedLocation}
         />
         <p style={{ marginTop: 60, textAlign: "center" }}>
-          No sales data available for {selectedLocation} in the selected{" "}
-          {reportType} period.
+          No sales data available for {selectedLocation} on {selectedDate} in
+          the selected {reportType} period.
         </p>
       </div>
     );
   }
-  //DAILY
 
-  // Aggregate sales by game type (excluding FOOD items)
-  const salesByGameType = activeTables.reduce((acc, entry) => {
-    const { gameType, totalAmount } = entry;
-    if (!gameType || totalAmount === undefined || gameType === "FOOD")
-      return acc; // Exclude FOOD row here
-
-    acc[gameType] = (acc[gameType] || 0) + (Number(totalAmount) || 0);
-    return acc;
-  }, {});
-
-  // Aggregate sales by ordered items across all rows
-  const salesByItems = activeTables.reduce((acc, entry) => {
-    entry.orderedItems.forEach((item) => {
-      acc[item] = (acc[item] || 0) + 1; // Count occurrences
-    });
-    return acc;
-  }, {});
-
-  // Calculate revenue from FOOD row items only
-  const foodRow = activeTables.find((entry) => entry.name === "FOOD");
-  const foodItemsRevenue = foodRow
-    ? foodRow.orderedItems.reduce(
-        (sum, item) => sum + (ITEM_PRICES[item] || 0),
-        0
-      )
-    : 0;
-
-  // Convert item sales to array format (all items)
-  const sortedItemSales = Object.entries(salesByItems)
-    .map(([item, count]) => ({
-      itemName: item,
-      quantitySold: count,
-      totalRevenue: count * (ITEM_PRICES[item] || 0),
-    }))
-    .sort((a, b) => b.totalRevenue - a.totalRevenue);
-
-  // Convert game type sales to array format
-  const sortedGameSales = Object.entries(salesByGameType)
-    .map(([game, total]) => ({ gameType: game, totalSales: total }))
-    .sort((a, b) => b.totalSales - a.totalSales);
-
-  // Total Revenue: Game sales + FOOD row items only
-  const totalGameRevenue = sortedGameSales.reduce(
-    (sum, entry) => sum + entry.totalSales,
-    0
-  );
-  const totalRevenue = totalGameRevenue + foodItemsRevenue;
-
-  const cashRevenue = activeTables.reduce(
-    (sum, entry) => sum + (Number(entry.cashAmount) || 0),
-    0
-  );
-  const onlineRevenue = activeTables.reduce(
-    (sum, entry) => sum + (Number(entry.onlineAmount) || 0),
-    0
-  );
-
-  // Search filter
-  const filteredItems = sortedItemSales.filter(({ itemName }) =>
-    itemName.toLowerCase().includes(searchText.toLowerCase())
-  );
-
-  const filteredGames = sortedGameSales.filter(({ gameType }) =>
-    gameType.toLowerCase().includes(searchText.toLowerCase())
-  );
-
-  const filteredCustomers = regularCustomers.filter(
-    ({ name }) => name.toLowerCase().includes(searchText.toLowerCase()) // Filter customers by name
-  );
-
-  // Weekly Report
   const weeklyData = [];
   if (reportType === "weekly") {
     const startOfWeek = moment(selectedDate).startOf("week");
@@ -372,45 +452,82 @@ const SalesReport = ({
     });
   }
 
-  // Monthly Report
-  const monthlyData = [];
-  let monthlyGameSales = [];
-  let monthlyFoodItemsRevenue = 0;
-  if (reportType === "monthly") {
-    const gameTypeSales = activeTables.reduce((acc, entry) => {
-      const { gameType, totalAmount } = entry;
-      if (
-        !gameType ||
-        totalAmount === undefined ||
-        gameType === "FOOD" ||
-        !entry.isClosed
-      )
-        return acc;
-      acc[gameType] = (acc[gameType] || 0) + (Number(totalAmount) || 0);
+  const salesByGameType = activeTables.reduce((acc, entry) => {
+    const { gameType, totalAmount } = entry;
+    if (
+      !gameType ||
+      totalAmount === undefined ||
+      gameType === "FOOD" ||
+      !entry.isClosed
+    )
       return acc;
-    }, {});
+    acc[gameType] = (acc[gameType] || 0) + (Number(totalAmount) || 0);
+    return acc;
+  }, {});
 
-    monthlyGameSales = Object.entries(gameTypeSales)
-      .map(([game, total]) => ({ gameType: game, totalSales: total }))
-      .sort((a, b) => b.totalSales - a.totalSales);
-
-    const foodRows = activeTables.filter((entry) => entry.name === "FOOD"); // Include all FOOD rows, open or closed
-    monthlyFoodItemsRevenue = foodRows.reduce((sum, entry) => {
-      return (
-        sum +
-        entry.orderedItems.reduce(
-          (itemSum, item) => itemSum + (ITEM_PRICES[item] || 0),
-          0
-        )
-      );
-    }, 0);
-
-    monthlyData.push({
-      key: moment(selectedDate).format("YYYY-MM"),
-      month: moment(selectedDate).format("MMMM YYYY"),
-      totalRevenue: monthlyTotalRevenue, // Pre-calculated from daily totals
+  const salesByItems = activeTables.reduce((acc, entry) => {
+    entry.orderedItems.forEach((item) => {
+      acc[item] = (acc[item] || 0) + 1;
     });
-  }
+    return acc;
+  }, {});
+
+  const foodRow = activeTables.find((entry) => entry.name === "FOOD");
+  const foodItemsRevenue = foodRow
+    ? foodRow.orderedItems.reduce(
+        (sum, item) => sum + (ITEM_PRICES[item] || 0),
+        0
+      )
+    : 0;
+
+  const sortedItemSales = Object.entries(salesByItems)
+    .map(([item, count]) => ({
+      itemName: item,
+      quantitySold: count,
+      totalRevenue: count * (ITEM_PRICES[item] || 0),
+    }))
+    .sort((a, b) => b.totalRevenue - a.totalRevenue);
+
+  const sortedGameSales = Object.entries(salesByGameType)
+    .map(([game, total]) => ({ gameType: game, totalSales: total }))
+    .sort((a, b) => b.totalSales - a.totalSales);
+
+  const totalGameRevenue = sortedGameSales.reduce(
+    (sum, entry) => sum + entry.totalSales,
+    0
+  );
+  const totalRevenue =
+    totalGameRevenue +
+    foodItemsRevenue +
+    (foodRow ? (foodRow.cashAmount || 0) + (foodRow.onlineAmount || 0) : 0);
+
+  const cashRevenue = activeTables.reduce(
+    (sum, entry) => sum + (Number(entry.cashAmount) || 0),
+    0
+  );
+  const onlineRevenue = activeTables.reduce(
+    (sum, entry) => sum + (Number(entry.onlineAmount) || 0),
+    0
+  );
+
+  const filteredItems = sortedItemSales.filter(({ itemName }) =>
+    itemName.toLowerCase().includes(searchText.toLowerCase())
+  );
+  const filteredGames = sortedGameSales.filter(({ gameType }) =>
+    gameType.toLowerCase().includes(searchText.toLowerCase())
+  );
+  const filteredCustomers = regularCustomers.filter(({ name }) =>
+    name.toLowerCase().includes(searchText.toLowerCase())
+  );
+  const filteredWeekly = weeklyData.filter((entry) =>
+    entry.range.toLowerCase().includes(searchText.toLowerCase())
+  );
+  const filteredMonthly = monthlyData.filter((entry) =>
+    entry.month.toLowerCase().includes(searchText.toLowerCase())
+  );
+  const filteredYearly = yearlyData.filter((entry) =>
+    entry.year.toLowerCase().includes(searchText.toLowerCase())
+  );
 
   const getTodaysDues = (customerName) => {
     return activeTables
@@ -418,7 +535,6 @@ const SalesReport = ({
       .reduce((sum, table) => sum + (table.dues || 0), 0);
   };
 
-  // Table Columns (Game Type Sales)
   const gameColumns = [
     {
       title: "Game Type 🎱",
@@ -435,7 +551,6 @@ const SalesReport = ({
     },
   ];
 
-  // Table Columns (Ordered Item Sales)
   const itemColumns = [
     {
       title: "Item Name 🍽️",
@@ -478,6 +593,16 @@ const SalesReport = ({
     },
   ];
 
+  const yearlyColumns = [
+    { title: "Year", dataIndex: "year", key: "year" },
+    {
+      title: "Total Revenue (Rs)",
+      dataIndex: "totalRevenue",
+      key: "totalRevenue",
+      render: (total) => `Rs ${total}`,
+    },
+  ];
+
   const customerColumns = [
     {
       title: "Customer Name 👤",
@@ -485,11 +610,7 @@ const SalesReport = ({
       key: "name",
       sorter: (a, b) => a.name.localeCompare(b.name),
     },
-    {
-      title: "Phone Number 📞",
-      dataIndex: "phone",
-      key: "phone",
-    },
+    { title: "Phone Number 📞", dataIndex: "phone", key: "phone" },
     {
       title: "Total Dues (Rs) 💸",
       dataIndex: "dues",
@@ -500,10 +621,7 @@ const SalesReport = ({
     {
       title: "Today's Dues (Rs) 📅",
       key: "todaysDues",
-      render: (_, record) => {
-        const todaysDues = getTodaysDues(record.name);
-        return `Rs ${todaysDues.toFixed(2)}`;
-      },
+      render: (_, record) => `Rs ${getTodaysDues(record.name).toFixed(2)}`,
       sorter: (a, b) => getTodaysDues(a.name) - getTodaysDues(b.name),
     },
     {
@@ -526,6 +644,12 @@ const SalesReport = ({
             onClick={() => handleShowCustomerTables(record)}
           >
             Show
+          </Button>
+          <Button
+            type="default"
+            onClick={() => handleShowPaymentHistory(record)}
+          >
+            Bill
           </Button>
         </div>
       ),
@@ -573,6 +697,33 @@ const SalesReport = ({
     },
   ];
 
+  const paymentHistoryColumns = [
+    {
+      title: "Date",
+      dataIndex: "date",
+      key: "date",
+      render: (date) => moment(date, "YYYY-MM-DD").format("YYYY-MM-DD"),
+    },
+    {
+      title: "Cash Amount (Rs)",
+      dataIndex: "cashAmount",
+      key: "cashAmount",
+      render: (amount) => `Rs ${amount.toFixed(2)}`,
+    },
+    {
+      title: "Online Amount (Rs)",
+      dataIndex: "onlineAmount",
+      key: "onlineAmount",
+      render: (amount) => `Rs ${amount.toFixed(2)}`,
+    },
+    {
+      title: "Total Payment (Rs)",
+      dataIndex: "totalAmount",
+      key: "totalAmount",
+      render: (amount) => `Rs ${amount.toFixed(2)}`,
+    },
+  ];
+
   return (
     <div>
       <Navbar
@@ -591,7 +742,8 @@ const SalesReport = ({
         }}
       >
         <Title level={3} style={{ textAlign: "center", color: "#1890ff" }}>
-          📊 Sales Report for {selectedLocation} on {selectedDate}
+          📊 Sales Report for {selectedLocation}{" "}
+          {reportType === "daily" ? `on ${selectedDate}` : ""}
         </Title>
 
         <Select
@@ -602,6 +754,7 @@ const SalesReport = ({
           <Option value="daily">Daily</Option>
           <Option value="weekly">Weekly</Option>
           <Option value="monthly">Monthly</Option>
+          <Option value="yearly">Yearly</Option>
         </Select>
 
         {loading ? (
@@ -662,9 +815,8 @@ const SalesReport = ({
               </Col>
             </Row>
 
-            {/* Search Bar */}
             <Input
-              placeholder="🔍 Search..."
+              placeholder="🔍 Search daily sales..."
               allowClear
               prefix={<SearchOutlined />}
               onChange={(e) => setSearchText(e.target.value)}
@@ -676,9 +828,8 @@ const SalesReport = ({
               }}
             />
 
-            {/* Sales by Game Type */}
             <Title level={4} style={{ marginTop: "20px", color: "#1890ff" }}>
-              🎮 Game Type Sales
+              🎮 Daily Sales by Game Type on {selectedDate}
             </Title>
             <Table
               dataSource={filteredGames}
@@ -693,7 +844,7 @@ const SalesReport = ({
             />
 
             <Title level={4} style={{ marginTop: "20px", color: "#52c41a" }}>
-              🍔 Ordered Item Sales
+              🍔 Daily Sales by Ordered Items on {selectedDate}
             </Title>
             <Table
               dataSource={filteredItems}
@@ -704,7 +855,7 @@ const SalesReport = ({
             />
 
             <Title level={4} style={{ marginTop: "20px", color: "#fa8c16" }}>
-              👥 Regular Customer Dues
+              👥 Regular Customer Dues on {selectedDate}
             </Title>
             <Table
               dataSource={filteredCustomers}
@@ -713,134 +864,351 @@ const SalesReport = ({
               pagination={{ pageSize: 5 }}
               style={{ borderRadius: "8px", overflow: "hidden" }}
             />
-
-            <Modal
-              title="Edit Customer Dues"
-              open={isEditCustomerModalOpen}
-              onCancel={() => setIsEditCustomerModalOpen(false)}
-              footer={null}
-            >
-              <Form form={editCustomerForm} onFinish={updateCustomerDues}>
-                <Form.Item name="name" label="Customer Name">
-                  <Input disabled />
-                </Form.Item>
-                <Form.Item name="phone" label="Phone Number">
-                  <Input disabled />
-                </Form.Item>
-                <Form.Item name="dues" label="Current Dues (Rs)">
-                  <Input disabled />
-                </Form.Item>
-                <Form.Item name="paymentAmount" label="Payment Amount (Rs)">
-                  <Input type="number" min={0} />
-                </Form.Item>
-                <Form.Item>
-                  <Button type="primary" htmlType="submit">
-                    Update Dues
-                  </Button>
-                </Form.Item>
-              </Form>
-            </Modal>
-
-            <Modal
-              title="Tables Contributing to Customer Dues"
-              open={isShowTablesModalOpen}
-              onCancel={() => setIsShowTablesModalOpen(false)}
-              footer={null}
-              width={800}
-            >
-              <Table
-                dataSource={selectedCustomerTables}
-                columns={tableColumns}
-                rowKey="id"
-                pagination={{ pageSize: 5 }}
-              />
-            </Modal>
-
-            {isDropdownOpen && (
+          </>
+        ) : reportType === "weekly" ? (
+          <>
+            <Input
+              placeholder="🔍 Search weekly sales..."
+              allowClear
+              prefix={<SearchOutlined />}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{
+                width: "100%",
+                marginBottom: "15px",
+                padding: "10px",
+                borderRadius: "5px",
+              }}
+            />
+            <Title level={4} style={{ marginTop: "20px", color: "#1890ff" }}>
+              📅 Weekly Sales
+            </Title>
+            <Table
+              dataSource={filteredWeekly}
+              columns={weeklyColumns}
+              bordered
+              pagination={{ pageSize: 5 }}
+              style={{
+                marginBottom: "20px",
+                borderRadius: "8px",
+                overflow: "hidden",
+              }}
+            />
+            <Title level={4} style={{ marginTop: "20px", color: "#1890ff" }}>
+              🎮 Weekly Sales by Game Type
+            </Title>
+            <Table
+              dataSource={filteredGames}
+              columns={gameColumns}
+              bordered
+              pagination={{ pageSize: 5 }}
+              style={{
+                marginBottom: "20px",
+                borderRadius: "8px",
+                overflow: "hidden",
+              }}
+            />
+            <Title level={4} style={{ marginTop: "20px", color: "#52c41a" }}>
+              🍔 Weekly Sales by Ordered Items
+            </Title>
+            <Table
+              dataSource={filteredItems}
+              columns={itemColumns}
+              bordered
+              pagination={{ pageSize: 5 }}
+              style={{ borderRadius: "8px", overflow: "hidden" }}
+            />
+          </>
+        ) : reportType === "monthly" ? (
+          <>
+            <Input
+              placeholder="🔍 Search monthly sales..."
+              allowClear
+              prefix={<SearchOutlined />}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{
+                width: "100%",
+                marginBottom: "15px",
+                padding: "10px",
+                borderRadius: "5px",
+              }}
+            />
+            <Title level={4} style={{ marginTop: "20px", color: "#1890ff" }}>
+              📅 Monthly Sales (Click a month for details)
+            </Title>
+            <Table
+              dataSource={filteredMonthly}
+              columns={monthlyColumns}
+              bordered
+              pagination={{ pageSize: 5 }}
+              style={{
+                marginBottom: "20px",
+                borderRadius: "8px",
+                overflow: "hidden",
+              }}
+              onRow={(record) => ({
+                onClick: () => handleMonthClick(record.key),
+              })}
+            />
+            {selectedMonth && (
               <>
-                <div className="overlay fixed top-0 left-0 w-full h-full bg-zinc-900 opacity-50 z-10"></div>
-                <div
-                  ref={dropdownRef}
-                  className="dropdown-menu fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-11/12 max-w-[40rem] h-[26rem] bg-white shadow-2xl rounded-3xl p-2 z-30 flex flex-col md:flex-row items-center gap-2 animate-fade-in"
+                <Title
+                  level={4}
+                  style={{ marginTop: "20px", color: "#1890ff" }}
                 >
-                  <div>
-                    <img
-                      src={logo1}
-                      className="h-[12.5rem] w-[30rem] rounded-t-3xl"
-                      alt="Logo 1"
-                    />
-                    <img
-                      src={logo2}
-                      className="h-[12.5rem] w-[30rem] rounded-b-3xl"
-                      alt="Logo 2"
-                    />
-                  </div>
-                  <div className="bg-gray-100 h-[25rem] w-[30rem] text-black rounded-3xl shadow-xl shadow-gray-400 p-5">
-                    <div className="flex mt-1 ml-10 w-60 flex-col items-center justify-center">
-                      <span className="text-3xl font-bold text-black text-center relative bottom-4">
-                        The House Of Pool
-                      </span>
-                      <h3>Login to Edit Customer Dues</h3>
-                    </div>
-                    <div>
-                      <Form
-                        form={loginForm}
-                        onFinish={handleLoginSubmit}
-                        className="flex flex-col items-center justify-center"
-                      >
-                        <Form.Item
-                          name="email"
-                          label="Email"
-                          rules={[
-                            {
-                              required: true,
-                              message: "Please enter your email",
-                            },
-                          ]}
-                        >
-                          <Input type="email" />
-                        </Form.Item>
-                        <Form.Item
-                          name="password"
-                          label="Password"
-                          rules={[
-                            {
-                              required: true,
-                              message: "Please enter your password",
-                            },
-                          ]}
-                        >
-                          <Input.Password />
-                        </Form.Item>
-                        <Form.Item>
-                          <Button type="primary" htmlType="submit">
-                            Edit
-                          </Button>
-                        </Form.Item>
-                      </Form>
-                    </div>
-                  </div>
-                </div>
+                  🎮 Monthly Sales by Game Type for{" "}
+                  {moment(selectedMonth, "YYYY-MM").format("MMMM YYYY")}
+                </Title>
+                <Table
+                  dataSource={filteredGames}
+                  columns={gameColumns}
+                  bordered
+                  pagination={{ pageSize: 5 }}
+                  style={{
+                    marginBottom: "20px",
+                    borderRadius: "8px",
+                    overflow: "hidden",
+                  }}
+                />
+                <Title
+                  level={4}
+                  style={{ marginTop: "20px", color: "#52c41a" }}
+                >
+                  🍔 Monthly Sales by Ordered Items for{" "}
+                  {moment(selectedMonth, "YYYY-MM").format("MMMM YYYY")}
+                </Title>
+                <Table
+                  dataSource={filteredItems}
+                  columns={itemColumns}
+                  bordered
+                  pagination={{ pageSize: 5 }}
+                  style={{
+                    marginBottom: "20px",
+                    borderRadius: "8px",
+                    overflow: "hidden",
+                  }}
+                />
               </>
             )}
-
+            <Row gutter={16} style={{ marginTop: "20px" }}>
+              <Col span={24}>
+                <Card
+                  style={{
+                    backgroundColor: "#f6ffed",
+                    borderLeft: "5px solid #52c41a",
+                  }}
+                >
+                  <Statistic
+                    title="Total Revenue Across All Months"
+                    value={monthlyTotalRevenue.toFixed(2)}
+                    prefix={<MoneyCollectOutlined />}
+                    suffix="Rs"
+                    valueStyle={{ color: "#52c41a", fontSize: "20px" }}
+                  />
+                </Card>
+              </Col>
+            </Row>
           </>
         ) : (
+          <>
+            <Input
+              placeholder="🔍 Search yearly sales..."
+              allowClear
+              prefix={<SearchOutlined />}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{
+                width: "100%",
+                marginBottom: "15px",
+                padding: "10px",
+                borderRadius: "5px",
+              }}
+            />
+            <Title level={4} style={{ marginTop: "20px", color: "#1890ff" }}>
+              📅 Yearly Sales
+            </Title>
+            <Table
+              dataSource={filteredYearly}
+              columns={yearlyColumns}
+              bordered
+              pagination={{ pageSize: 5 }}
+              style={{
+                marginBottom: "20px",
+                borderRadius: "8px",
+                overflow: "hidden",
+              }}
+            />
+            <Title level={4} style={{ marginTop: "20px", color: "#1890ff" }}>
+              🎮 Yearly Sales by Game Type
+            </Title>
+            <Table
+              dataSource={filteredGames}
+              columns={gameColumns}
+              bordered
+              pagination={{ pageSize: 5 }}
+              style={{
+                marginBottom: "20px",
+                borderRadius: "8px",
+                overflow: "hidden",
+              }}
+            />
+            <Title level={4} style={{ marginTop: "20px", color: "#52c41a" }}>
+              🍔 Yearly Sales by Ordered Items
+            </Title>
+            <Table
+              dataSource={filteredItems}
+              columns={itemColumns}
+              bordered
+              pagination={{ pageSize: 5 }}
+              style={{
+                marginBottom: "20px",
+                borderRadius: "8px",
+                overflow: "hidden",
+              }}
+            />
+            <Row gutter={16} style={{ marginTop: "20px" }}>
+              <Col span={24}>
+                <Card
+                  style={{
+                    backgroundColor: "#f6ffed",
+                    borderLeft: "5px solid #52c41a",
+                  }}
+                >
+                  <Statistic
+                    title="Total Revenue Across All Years"
+                    value={monthlyTotalRevenue.toFixed(2)}
+                    prefix={<MoneyCollectOutlined />}
+                    suffix="Rs"
+                    valueStyle={{ color: "#52c41a", fontSize: "20px" }}
+                  />
+                </Card>
+              </Col>
+            </Row>
+          </>
+        )}
+
+        <Modal
+          title="Edit Customer Dues"
+          open={isEditCustomerModalOpen}
+          onCancel={() => setIsEditCustomerModalOpen(false)}
+          footer={null}
+        >
+          <Form form={editCustomerForm} onFinish={updateCustomerDues}>
+            <Form.Item name="name" label="Customer Name">
+              <Input disabled />
+            </Form.Item>
+            <Form.Item name="phone" label="Phone Number">
+              <Input disabled />
+            </Form.Item>
+            <Form.Item name="dues" label="Current Dues (Rs)">
+              <Input disabled />
+            </Form.Item>
+            <Form.Item name="cashPaymentAmount" label="Cash Payment (Rs)">
+              <Input type="number" min={0} />
+            </Form.Item>
+            <Form.Item name="onlinePaymentAmount" label="Online Payment (Rs)">
+              <Input type="number" min={0} />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit">
+                Update Dues
+              </Button>
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        <Modal
+          title="Tables Contributing to Customer Dues"
+          open={isShowTablesModalOpen}
+          onCancel={() => setIsShowTablesModalOpen(false)}
+          footer={null}
+          width={800}
+        >
           <Table
-            dataSource={
-              reportType === "weekly"
-                ? weeklyData.filter((entry) =>
-                    entry.range.toLowerCase().includes(searchText.toLowerCase())
-                  )
-                : monthlyData.filter((entry) =>
-                    entry.month.toLowerCase().includes(searchText.toLowerCase())
-                  )
-            }
-            columns={reportType === "weekly" ? weeklyColumns : monthlyColumns}
-            bordered
+            dataSource={selectedCustomerTables}
+            columns={tableColumns}
+            rowKey="id"
             pagination={{ pageSize: 5 }}
-            style={{ borderRadius: "8px", overflow: "hidden" }}
           />
+        </Modal>
+
+        <Modal
+          title={`Payment History for ${editCustomerData?.name || "Customer"}`}
+          open={isPaymentHistoryModalOpen}
+          onCancel={() => setIsPaymentHistoryModalOpen(false)}
+          footer={null}
+          width={800}
+        >
+          <Table
+            dataSource={paymentHistory}
+            columns={paymentHistoryColumns}
+            rowKey="date"
+            pagination={{ pageSize: 5 }}
+            loading={loading}
+          />
+        </Modal>
+
+        {isDropdownOpen && (
+          <>
+            <div className="overlay fixed top-0 left-0 w-full h-full bg-zinc-900 opacity-50 z-10"></div>
+            <div
+              ref={dropdownRef}
+              className="dropdown-menu fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-11/12 max-w-[40rem] h-[26rem] bg-white shadow-2xl rounded-3xl p-2 z-30 flex flex-col md:flex-row items-center gap-2 animate-fade-in"
+            >
+              <div>
+                <img
+                  src={logo1}
+                  className="h-[12.5rem] w-[30rem] rounded-t-3xl"
+                  alt="Logo 1"
+                />
+                <img
+                  src={logo2}
+                  className="h-[12.5rem] w-[30rem] rounded-b-3xl"
+                  alt="Logo 2"
+                />
+              </div>
+              <div className="bg-gray-100 h-[25rem] w-[30rem] text-black rounded-3xl shadow-xl shadow-gray-400 p-5">
+                <div className="flex mt-1 ml-10 w-60 flex-col items-center justify-center">
+                  <span className="text-3xl font-bold text-black text-center relative bottom-4">
+                    The House Of Pool
+                  </span>
+                  <h3>Login to Edit Customer Dues</h3>
+                </div>
+                <div>
+                  <Form
+                    form={loginForm}
+                    onFinish={handleLoginSubmit}
+                    className="flex flex-col items-center justify-center"
+                  >
+                    <Form.Item
+                      name="email"
+                      label="Email"
+                      rules={[
+                        { required: true, message: "Please enter your email" },
+                      ]}
+                    >
+                      <Input type="email" />
+                    </Form.Item>
+                    <Form.Item
+                      name="password"
+                      label="Password"
+                      rules={[
+                        {
+                          required: true,
+                          message: "Please enter your password",
+                        },
+                      ]}
+                    >
+                      <Input.Password />
+                    </Form.Item>
+                    <Form.Item>
+                      <Button type="primary" htmlType="submit">
+                        Edit
+                      </Button>
+                    </Form.Item>
+                  </Form>
+                </div>
+              </div>
+            </div>
+          </>
         )}
       </Card>
     </div>
