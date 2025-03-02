@@ -1,4 +1,4 @@
-import { Button, Select } from "antd";
+import { Button, Select, Form, Input } from "antd";
 import { doc, getDoc } from "firebase/firestore";
 import React, { useEffect, useRef, useState } from "react";
 import { CgProfile } from "react-icons/cg";
@@ -6,11 +6,11 @@ import { useNavigate } from "react-router-dom";
 import logo1 from "./HOP3.png";
 import logo2 from "./HOP5.png";
 import Profile from "./Profile";
-import Register from "./Register";
 import { auth, db } from "./firebase";
 import { MenuOutlined } from "@ant-design/icons";
-import "./Navbar.css"
+import "./Navbar.css";
 import Login from "./Login";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 const { Option } = Select;
 
@@ -30,14 +30,20 @@ const Navbar = ({
         }
       : null
   );
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false); // Existing dropdown
+  const [isActionDropdownOpen, setIsActionDropdownOpen] = useState(false); // New dropdown
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const dropdownRef = useRef(null);
+  const [dropdownAction, setDropdownAction] = useState(null);
+  const [pendingLocation, setPendingLocation] = useState(null); // Store intended location
+  const [userRole, setUserRole] = useState(null); // Track user access level
+  const profileDropdownRef = useRef(null); // Ref for existing dropdown
+  const actionDropdownRef = useRef(null); // Ref for new dropdown
   const menuRef = useRef(null);
+  const [loginForm] = Form.useForm();
 
   useEffect(() => {
-    if(auth.currentUser){
-      setIsDropdownOpen(false);
+    if (auth.currentUser) {
+      setIsProfileDropdownOpen(false);
     }
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
       if (user) {
@@ -52,18 +58,28 @@ const Navbar = ({
               firstName: user.displayName || "User",
             });
           }
-          setIsDropdownOpen(false);
+          // Set user role based on email
+          if (user.email === "hop@gmail.com") {
+            setUserRole("full");
+          } else if (user.email === "staff@gmail.com") {
+            setUserRole("restricted");
+          } else {
+            setUserRole("unknown");
+          }
+          setIsProfileDropdownOpen(false);
         } catch (error) {
           console.error("Error fetching user data:", error.message);
           setUserDetails({
             email: user.email,
             firstName: user.displayName || "User",
           });
-          setIsDropdownOpen(false);
+          setUserRole("unknown");
+          setIsProfileDropdownOpen(false);
         }
       } else {
         setUserDetails(null);
-        setIsDropdownOpen(true);
+        setUserRole(null);
+        setIsProfileDropdownOpen(true);
       }
     });
     return () => unsubscribe();
@@ -71,26 +87,132 @@ const Navbar = ({
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target) &&
-        menuRef.current &&
-        !menuRef.current.contains(event.target) &&
-        userDetails
-      ) {
-        setIsDropdownOpen(false);
+      const isOutsideProfileDropdown =
+        profileDropdownRef.current &&
+        !profileDropdownRef.current.contains(event.target);
+      const isOutsideActionDropdown =
+        actionDropdownRef.current &&
+        !actionDropdownRef.current.contains(event.target);
+      const isOutsideMenu =
+        menuRef.current && !menuRef.current.contains(event.target);
+
+      // Close profile dropdown only if authenticated and clicking outside
+      if (isOutsideProfileDropdown && userDetails) {
+        setIsProfileDropdownOpen(false);
+      }
+
+      // Always close action dropdown and menu when clicking outside
+      if (isOutsideActionDropdown) {
+        setIsActionDropdownOpen(false);
+      }
+      if (isOutsideMenu) {
         setIsMenuOpen(false);
       }
     };
 
-    if (isDropdownOpen || isMenuOpen) {
+    if (isProfileDropdownOpen || isActionDropdownOpen || isMenuOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isDropdownOpen, isMenuOpen, userDetails]);
+  }, [isProfileDropdownOpen, isActionDropdownOpen, isMenuOpen, userDetails]);
 
-  const toggleDropdown = () => setIsDropdownOpen((prev) => !prev);
+  const toggleProfileDropdown = () => setIsProfileDropdownOpen((prev) => !prev);
   const toggleMenu = () => setIsMenuOpen((prev) => !prev);
+
+  const showActionDropdown = (action, value = null) => {
+    setDropdownAction(action);
+    if (action === "location" && value) {
+      setPendingLocation(value);
+    }
+    setIsActionDropdownOpen(true);
+  };
+
+  const handleLoginSubmit = async (values) => {
+    try {
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        values.email
+      );
+      const user = userCredential.user;
+      setIsActionDropdownOpen(false);
+      loginForm.resetFields();
+
+      // Set user role based on credentials
+      if (values.email === "hop@gmail.com") {
+        setUserRole("full");
+        switch (dropdownAction) {
+          case "inventory":
+            navigate("/inventory");
+            break;
+          case "reports":
+            navigate("/reports");
+            break;
+          case "expenses":
+            navigate("/expenses");
+            break;
+          case "location":
+            if (pendingLocation) {
+              setSelectedLocation(pendingLocation);
+              setPendingLocation(null);
+            }
+            break;
+          default:
+            navigate("/"); // Default to Home
+            break;
+        }
+      } else if (values.email === "staff@gmail.com") {
+        setUserRole("restricted");
+        navigate("/"); // Restricted users go to Home
+        alert("You have restricted access and can only view the Home page.");
+      } else {
+        setUserRole("unknown");
+        navigate("/"); // Unknown users go to Home
+        alert("Your account does not have access to restricted features.");
+      }
+    } catch (error) {
+      console.error("Login failed:", error);
+      alert("Invalid email or password. Please try again.");
+      setPendingLocation(null);
+    }
+  };
+
+  const handleRestrictedAction = (action) => {
+    if (!userRole) {
+      alert("You do not have permission to access this feature.");
+    } else if (userRole === "full") {
+      switch (action) {
+        case "inventory":
+          navigate("/inventory");
+          break;
+        case "reports":
+          navigate("/reports");
+          break;
+        case "expenses":
+          navigate("/expenses");
+          break;
+        default:
+          break;
+      }
+    } else {
+      alert("You do not have permission to access this feature.");
+    }
+  };
+
+  const handleSelectClick = () => {
+    if (userRole === "restricted") {
+      alert("You do not have permission to access this feature.");
+    }
+  };
+
+  const handleLocationChange = (value) => {
+    if (!userRole) {
+      alert("You do not have permission to access this feature.");
+    } else if (userRole === "full") {
+      setSelectedLocation(value);
+    } else {
+      // For restricted or unknown, alert is handled by onClick
+    }
+  };
 
   return (
     <div className="fixed top-0 left-0 w-full bg-[#001529] text-white flex items-center justify-between px-4 py-2 z-10">
@@ -129,30 +251,48 @@ const Navbar = ({
         <Button
           type="link"
           className="text-white text-base hover:text-gray-300"
-          onClick={() => navigate("/inventory")}
+          onClick={() => handleRestrictedAction("inventory")}
         >
           <span className="text-white">Inventory</span>
         </Button>
         <Button
           type="link"
           className="text-white text-base hover:text-gray-300"
-          onClick={() => navigate("/reports")}
+          onClick={() => handleRestrictedAction("reports")}
         >
           <span className="text-white">Reports</span>
         </Button>
-        <Select
-          value={selectedLocation}
-          onChange={setSelectedLocation}
-          className="w-40 md:w-44"
+        <Button
+          type="link"
+          className="text-white text-base hover:text-gray-300"
+          onClick={() => handleRestrictedAction("expenses")}
         >
-          <Option value="Old House Of Pool">Old House Of Pool</Option>
-          <Option value="New House Of Pool">New House Of Pool</Option>
-        </Select>
+          <span className="text-white">Expenses</span>
+        </Button>
+        {userRole !== "restricted" ? (
+          <Select
+            value={selectedLocation}
+            onClick={handleSelectClick} // Show alert for restricted users (though not triggered here)
+            onChange={handleLocationChange} // Handle selection for full access
+            className="w-40 md:w-44"
+          >
+            <Option value="Old House Of Pool">Old House Of Pool</Option>
+            <Option value="New House Of Pool">New House Of Pool</Option>
+          </Select>
+        ) : (
+          <Button
+            type="link"
+            className="text-white text-base hover:text-gray-300 w-40 md:w-44"
+            onClick={handleSelectClick}
+          >
+            <span className="text-white">{selectedLocation}</span>
+          </Button>
+        )}
       </div>
 
-      {/* Profile/Login Dropdown */}
+      {/* Profile/Login Dropdown (Existing) */}
       <div className="flex items-center gap-4">
-        <button onClick={toggleDropdown} className="flex items-center">
+        <button onClick={toggleProfileDropdown} className="flex items-center">
           <div className="flex items-center justify-center text-lg md:text-2xl h-8 md:h-10 w-20 md:w-24 bg-white rounded-full">
             {userDetails ? (
               <div className="flex items-center">
@@ -205,13 +345,13 @@ const Navbar = ({
         />
       </div>
 
-      {/* Dropdown Overlay and Content */}
-      {isDropdownOpen && (
+      {/* Existing Dropdown (Profile/Login) */}
+      {isProfileDropdownOpen && (
         <>
           <div className="fixed inset-0 bg-black opacity-50 z-20" />
           <div
-            ref={dropdownRef}
-            className="dropdown-menu fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2  min-w-[30rem] md:max-w-[40rem] md:h-[26rem] h-[20rem] bg-white shadow-2xl rounded-3xl p-2 z-30 flex flex-row md:flex-row items-center justify-center animate-fade-in"
+            ref={profileDropdownRef}
+            className="dropdown-menu fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 min-w-[30rem] md:max-w-[40rem] md:h-[26rem] h-[20rem] bg-white shadow-2xl rounded-3xl p-2 z-30 flex flex-row md:flex-row items-center justify-center animate-fade-in"
           >
             <div className="dropdown-images w-full md:w-full h-[19rem] md:h-[25rem] flex flex-col items-center justify-center">
               <img
@@ -226,12 +366,7 @@ const Navbar = ({
               />
             </div>
             <div className="w-full md:w-full text-black p-4 flex flex-col items-center justify-center">
-              {userDetails ? (
-                <Profile userDetails={userDetails} />
-              ) : (
-                // <Register/>
-                <Login />
-              )}
+              {userDetails ? <Profile userDetails={userDetails} /> : <Login />}
             </div>
           </div>
         </>
