@@ -112,6 +112,61 @@ const PoolBillingSystem = ({
   const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState(false);
   const [addCustomerForm] = Form.useForm();
   const [turfReservations, setTurfReservations] = useState([]);
+  const [isEditingTurf, setIsEditingTurf] = useState(false);
+  const [editingReservationId, setEditingReservationId] = useState(null);
+
+  const editTurfReservation = (reservation) => {
+    setIsEditingTurf(true);
+    setEditingReservationId(reservation.id);
+    form.setFieldsValue({
+      name: reservation.name,
+      phone: reservation.phone,
+      startTime: moment(reservation.startTime).format("YYYY-MM-DDTHH:mm"),
+      endTime: moment(reservation.endTime).format("YYYY-MM-DDTHH:mm"),
+      advancePayment: reservation.advancePayment,
+    });
+  };
+
+  const saveEditedTurfReservation = async (values) => {
+    if (!selectedTable || selectedTable !== "Turf" || !editingReservationId)
+      return;
+
+    const startTime = moment(values.startTime);
+    const endTime = moment(values.endTime);
+    const advancePayment = parseFloat(values.advancePayment) || 0;
+
+    // Validate time slot (exclude the current reservation being edited)
+    const isSlotTaken = turfReservations.some((res) => {
+      if (res.id === editingReservationId) return false; // Skip the current reservation
+      const resStart = moment(res.startTime);
+      const resEnd = moment(res.endTime);
+      return (
+        startTime.isBetween(resStart, resEnd, null, "[]") ||
+        endTime.isBetween(resStart, resEnd, null, "[]") ||
+        (startTime.isBefore(resStart) && endTime.isAfter(resEnd))
+      );
+    });
+
+    if (isSlotTaken) {
+      alert("This time slot is already reserved. Please choose another time.");
+      return;
+    }
+
+    const updatedReservation = {
+      ...turfReservations.find((res) => res.id === editingReservationId),
+      name: values.name,
+      phone: values.phone,
+      startTime: startTime.toDate(),
+      endTime: endTime.toDate(),
+      advancePayment,
+    };
+
+    await saveTurfReservation(updatedReservation);
+    setIsEditingTurf(false);
+    setEditingReservationId(null);
+    setIsModalOpen(false);
+    form.resetFields();
+  };
 
   // Fetch turf reservations from Firestore
   const fetchTurfReservations = async () => {
@@ -209,6 +264,52 @@ const PoolBillingSystem = ({
     }
     return () => unsubscribe();
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const checkTurfReservations = async () => {
+      const now = moment();
+      const readyReservations = turfReservations.filter(
+        (res) => moment(res.startTime).isSameOrBefore(now) && !res.isActive
+      );
+
+      if (readyReservations.length > 0) {
+        // Update activeTables locally and persist to Firestore
+        setActiveTables((prevTables) => {
+          const updatedTables = [...prevTables];
+          readyReservations.forEach((res) => {
+            if (!updatedTables.some((t) => t.id === res.id)) {
+              updatedTables.push({
+                ...res,
+                isClosed: false,
+                cashAmount: 0,
+                onlineAmount: 0,
+                orderedItems: [],
+              });
+            }
+          });
+          // Save to Firestore immediately
+          saveTables(selectedDate, updatedTables, selectedLocation);
+          return updatedTables;
+        });
+
+        // Mark reservations as active in Firestore
+        await Promise.all(
+          readyReservations.map((res) =>
+            updateDoc(doc(db, "turfReservations", res.id), { isActive: true })
+          )
+        );
+
+        // Refresh reservations to ensure UI consistency
+        await fetchTurfReservations();
+      }
+    };
+
+    const interval = setInterval(checkTurfReservations, 60000); // Check every minute
+    checkTurfReservations(); // Initial check
+    return () => clearInterval(interval);
+  }, [turfReservations, selectedDate, selectedLocation, isAuthenticated]);
 
   const addRegularCustomer = async (values) => {
     if (!isAuthenticated) {
@@ -1142,18 +1243,27 @@ const PoolBillingSystem = ({
       title: "Start Time",
       dataIndex: "startTime",
       key: "startTime",
-      render: (t) => moment(t).format("YYYY-MM-DD HH:mm"),
+      render: (t) => moment(t).format("DD-MMM-YYYY hh:mm A"), // Simplified format
     },
     {
       title: "End Time",
       dataIndex: "endTime",
       key: "endTime",
-      render: (t) => moment(t).format("YYYY-MM-DD HH:mm"),
+      render: (t) => moment(t).format("DD-MMM-YYYY hh:mm A"), // Simplified format
     },
     {
       title: "Advance Payment (Rs)",
       dataIndex: "advancePayment",
       key: "advancePayment",
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_, record) => (
+        <Button type="link" onClick={() => editTurfReservation(record)}>
+          Edit
+        </Button>
+      ),
     },
   ];
 
@@ -1881,14 +1991,25 @@ const PoolBillingSystem = ({
         />
 
         <Modal
-          title="Start New Game"
+          title={isEditingTurf ? "Edit Turf Reservation" : "Start New Game"}
           open={isModalOpen}
-          onCancel={() => setIsModalOpen(false)}
+          onCancel={() => {
+            setIsModalOpen(false);
+            setIsEditingTurf(false);
+            setEditingReservationId(null);
+            form.resetFields();
+          }}
           footer={null}
         >
           <Form
             form={form}
-            onFinish={selectedTable === "Turf" ? reserveTurf : startTable}
+            onFinish={
+              selectedTable === "Turf"
+                ? isEditingTurf
+                  ? saveEditedTurfReservation
+                  : reserveTurf
+                : startTable
+            }
           >
             <Form.Item>
               <h3>Table: {selectedTable}</h3>
@@ -1952,7 +2073,7 @@ const PoolBillingSystem = ({
                 />
                 <Form.Item>
                   <Button type="primary" htmlType="submit">
-                    Reserve Turf
+                    {isEditingTurf ? "Save Changes" : "Reserve Turf"}
                   </Button>
                 </Form.Item>
               </>
