@@ -18,6 +18,8 @@ import {
   collection,
   getDocs,
   updateDoc,
+  query,
+  where,
 } from "firebase/firestore";
 import moment from "moment";
 import React, { useEffect, useRef, useState } from "react";
@@ -109,6 +111,71 @@ const PoolBillingSystem = ({
   const [selectedPaymentOption, setSelectedPaymentOption] = useState("Paid");
   const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState(false);
   const [addCustomerForm] = Form.useForm();
+  const [turfReservations, setTurfReservations] = useState([]);
+
+  // Fetch turf reservations from Firestore
+  const fetchTurfReservations = async () => {
+    if (!isAuthenticated) return;
+    const q = query(
+      collection(db, "turfReservations"),
+      where("location", "==", selectedLocation)
+    );
+    const querySnapshot = await getDocs(q);
+    const reservations = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+      startTime: moment(doc.data().startTime).toDate(),
+      endTime: moment(doc.data().endTime).toDate(),
+    }));
+    setTurfReservations(reservations);
+  };
+
+  useEffect(() => {
+    fetchTurfReservations();
+  }, [selectedLocation, isAuthenticated]);
+
+  // Check and move turf reservations to activeTables when start time hits
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const checkTurfReservations = () => {
+      const now = moment();
+      const readyReservations = turfReservations.filter(
+        (res) => moment(res.startTime).isSameOrBefore(now) && !res.isActive
+      );
+
+      if (readyReservations.length > 0) {
+        setActiveTables((prevTables) => {
+          const updatedTables = [...prevTables];
+          readyReservations.forEach((res) => {
+            if (!updatedTables.some((t) => t.id === res.id)) {
+              updatedTables.push({
+                ...res,
+                isClosed: false,
+                cashAmount: 0,
+                onlineAmount: 0,
+                orderedItems: [],
+              });
+            }
+          });
+          saveTables(selectedDate, updatedTables, selectedLocation);
+          return updatedTables;
+        });
+
+        // Mark reservations as active in Firestore
+        readyReservations.forEach(async (res) => {
+          await updateDoc(doc(db, "turfReservations", res.id), {
+            isActive: true,
+          });
+        });
+        fetchTurfReservations(); // Refresh reservations
+      }
+    };
+
+    const interval = setInterval(checkTurfReservations, 60000); // Check every minute
+    checkTurfReservations(); // Initial check
+    return () => clearInterval(interval);
+  }, [turfReservations, selectedDate, selectedLocation, isAuthenticated]);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -262,6 +329,19 @@ const PoolBillingSystem = ({
     await setDoc(doc(db, "tables", `${location}_${date}`), {
       data: formattedTables,
     });
+  };
+
+  const saveTurfReservation = async (reservation) => {
+    if (!isAuthenticated) return;
+    const reservationDoc = doc(db, "turfReservations", reservation.id);
+    await setDoc(reservationDoc, {
+      ...reservation,
+      startTime: reservation.startTime.toISOString(),
+      endTime: reservation.endTime.toISOString(),
+      location: selectedLocation,
+      isActive: false,
+    });
+    await fetchTurfReservations();
   };
 
   const getTablesByDate = (date, location = selectedLocation, callback) => {
@@ -425,54 +505,87 @@ const PoolBillingSystem = ({
     if (!selectedTable) return;
 
     const startTime = new Date().toISOString();
-
-    console.log("Selected Table Name :", selectedTable);
-
     let gameType = "Other";
 
     if (typeof selectedTable === "string") {
       const lowerTable = selectedTable.toLowerCase();
-      if (lowerTable.includes("table tennis")) {
-        gameType = "Table Tennis";
-      } else if (lowerTable.startsWith("table ")) {
-        gameType = "8-ball Pool";
-      } else if (lowerTable.includes("controller")) {
-        gameType = "PS";
-      } else if (lowerTable.includes("turf")) {
-        gameType = "Turf";
-      }
+      if (lowerTable.includes("table tennis")) gameType = "Table Tennis";
+      else if (lowerTable.startsWith("table ")) gameType = "8-ball Pool";
+      else if (lowerTable.includes("controller")) gameType = "PS";
+      else if (lowerTable.includes("turf")) gameType = "Turf";
     } else {
       console.error("Error: selectedTable is not a string", selectedTable);
     }
 
-    console.log("Determined Game Type:", gameType);
+    if (gameType !== "Turf") {
+      const newEntry = {
+        ...values,
+        id: uuidv4(),
+        table: selectedTable,
+        startTime,
+        orderedItems: [],
+        totalAmount: 0,
+        gameType,
+        isClosed: false,
+        location: selectedLocation,
+        cashAmount: 0,
+        onlineAmount: 0,
+      };
 
-    const newEntry = {
-      ...values,
-      id: uuidv4(),
-      table: selectedTable,
-      startTime,
-      orderedItems: [],
-      totalAmount: 0,
-      gameType,
-      isClosed: false,
-      location: selectedLocation,
-      cashAmount: 0,
-      onlineAmount: 0,
-    };
+      setActiveTables((prevTables) => {
+        const updatedTables = [...prevTables, newEntry];
+        if (isAuthenticated)
+          saveTables(selectedDate, updatedTables, selectedLocation);
+        return updatedTables;
+      });
 
-    setActiveTables((prevTables) => {
-      const updatedTables = [...prevTables, newEntry];
-      if (isAuthenticated)
-        saveTables(selectedDate, updatedTables, selectedLocation);
-      return updatedTables;
+      setIsModalOpen(false);
+      form.resetFields();
+    }
+    // Turf-specific logic is handled in reserveTurf
+  };
+
+  const reserveTurf = async (values) => {
+    if (!selectedTable || selectedTable !== "Turf") return;
+
+    const startTime = moment(values.startTime);
+    const endTime = moment(values.endTime);
+    const advancePayment = parseFloat(values.advancePayment) || 0;
+
+    // Validate time slot
+    const isSlotTaken = turfReservations.some((res) => {
+      const resStart = moment(res.startTime);
+      const resEnd = moment(res.endTime);
+      return (
+        startTime.isBetween(resStart, resEnd, null, "[]") ||
+        endTime.isBetween(resStart, resEnd, null, "[]") ||
+        (startTime.isBefore(resStart) && endTime.isAfter(resEnd))
+      );
     });
 
+    if (isSlotTaken) {
+      alert("This time slot is already reserved. Please choose another time.");
+      return;
+    }
+
+    const reservation = {
+      id: uuidv4(),
+      table: selectedTable,
+      name: values.name,
+      phone: values.phone,
+      startTime: startTime.toDate(),
+      endTime: endTime.toDate(),
+      advancePayment,
+      gameType: "Turf",
+      isClosed: false,
+      location: selectedLocation,
+      isActive: false,
+    };
+
+    await saveTurfReservation(reservation);
     setIsModalOpen(false);
     form.resetFields();
   };
-
-  console.log(activeTables);
 
   const stopTable = (id) => {
     const tableToEdit = activeTables.find((t) => t.id === id);
@@ -502,6 +615,7 @@ const PoolBillingSystem = ({
       startTime: moment(tableToEdit.startTime).format("YYYY-MM-DDTHH:mm"),
       endTime: formattedEndTime,
       totalAmount,
+      advancePayment: tableToEdit.advancePayment || 0,
     });
   };
 
@@ -548,7 +662,6 @@ const PoolBillingSystem = ({
       acc[item] = (acc[item] || 0) + 1;
       return acc;
     }, {});
-    console.log("Aggregated items:", itemCounts);
     return Object.entries(itemCounts)
       .map(([name, count]) => `${count} ${name}`)
       .join(", ");
@@ -762,9 +875,7 @@ const PoolBillingSystem = ({
   const handleEndTimeChange = (e) => {
     const newEndTime = e.target.value
       ? new Date(e.target.value)
-      : editData.endTime
-      ? new Date(editData.endTime)
-      : new Date();
+      : editData.endTime || new Date();
     setEditData((prev) => {
       const { totalAmount, duration, durationString } = calculateTotalAmount(
         prev,
@@ -801,6 +912,7 @@ const PoolBillingSystem = ({
 
         const cashAmount = parseFloat(values.cashAmount) || 0;
         const onlineAmount = parseFloat(values.onlineAmount) || 0;
+        const advancePayment = t.advancePayment || 0;
         let updatedDues = 0;
 
         if (selectedPaymentOption !== "Paid") {
@@ -808,7 +920,8 @@ const PoolBillingSystem = ({
             (c) => c.name === selectedPaymentOption
           );
           if (selectedCustomer) {
-            updatedDues = totalAmount - (cashAmount + onlineAmount);
+            updatedDues =
+              totalAmount - advancePayment - (cashAmount + onlineAmount);
             if (updatedDues > 0)
               updateCustomerDues(selectedCustomer.id, updatedDues);
           }
@@ -825,6 +938,7 @@ const PoolBillingSystem = ({
           totalAmount,
           cashAmount,
           onlineAmount,
+          advancePayment,
           isClosed: true,
           dues: updatedDues > 0 ? updatedDues : 0,
           paymentOption: selectedPaymentOption,
@@ -859,6 +973,7 @@ const PoolBillingSystem = ({
       totalAmount: record.totalAmount,
       cashAmount: record.cashAmount || 0,
       onlineAmount: record.onlineAmount || 0,
+      advancePayment: record.advancePayment || 0,
     });
   };
 
@@ -1019,6 +1134,27 @@ const PoolBillingSystem = ({
     "Table 11",
     "Table 12",
     "Table 14",
+  ];
+
+  const reservationColumns = [
+    { title: "Customer Name", dataIndex: "name", key: "name" },
+    {
+      title: "Start Time",
+      dataIndex: "startTime",
+      key: "startTime",
+      render: (t) => moment(t).format("YYYY-MM-DD HH:mm"),
+    },
+    {
+      title: "End Time",
+      dataIndex: "endTime",
+      key: "endTime",
+      render: (t) => moment(t).format("YYYY-MM-DD HH:mm"),
+    },
+    {
+      title: "Advance Payment (Rs)",
+      dataIndex: "advancePayment",
+      key: "advancePayment",
+    },
   ];
 
   return (
@@ -1230,7 +1366,7 @@ const PoolBillingSystem = ({
                     display: "flex",
                     justifyContent: "center",
                   }}
-                  className=" flex text-4xl font-bold "
+                  className="flex text-4xl font-bold"
                 >
                   PS 5
                 </h1>
@@ -1324,7 +1460,7 @@ const PoolBillingSystem = ({
                         display: "flex",
                         justifyContent: "center",
                       }}
-                      className=" flex text-4xl font-bold relative top-3"
+                      className="flex text-4xl font-bold relative top-3"
                     >
                       Table Tennis
                     </h1>
@@ -1420,7 +1556,7 @@ const PoolBillingSystem = ({
                         display: "flex",
                         justifyContent: "center",
                       }}
-                      className=" flex text-4xl font-bold relative top-3"
+                      className="flex text-4xl font-bold relative top-3"
                     >
                       Turf
                     </h1>
@@ -1461,9 +1597,6 @@ const PoolBillingSystem = ({
                               setSelectedTable(ground);
                               setIsModalOpen(true);
                             }}
-                            disabled={activeTables.some(
-                              (t) => t.table === ground && !t.isClosed
-                            )}
                             style={{
                               backgroundColor: activeTables.some(
                                 (t) => t.table === ground && !t.isClosed
@@ -1472,11 +1605,6 @@ const PoolBillingSystem = ({
                                 : "rgba(0, 89, 255, 0.93)",
                               position: "relative",
                               bottom: "10px",
-                              cursor: activeTables.some(
-                                (t) => t.table === ground && !t.isClosed
-                              )
-                                ? "not-allowed"
-                                : "pointer",
                               color: "white",
                             }}
                           >
@@ -1535,7 +1663,7 @@ const PoolBillingSystem = ({
                     display: "flex",
                     justifyContent: "center",
                   }}
-                  className=" flex text-4xl font-bold relative top-7"
+                  className="flex text-4xl font-bold relative top-7"
                 >
                   8 Ball Pool
                 </h1>
@@ -1758,7 +1886,10 @@ const PoolBillingSystem = ({
           onCancel={() => setIsModalOpen(false)}
           footer={null}
         >
-          <Form form={form} onFinish={startTable}>
+          <Form
+            form={form}
+            onFinish={selectedTable === "Turf" ? reserveTurf : startTable}
+          >
             <Form.Item>
               <h3>Table: {selectedTable}</h3>
             </Form.Item>
@@ -1776,11 +1907,62 @@ const PoolBillingSystem = ({
             >
               <Input />
             </Form.Item>
-            <Form.Item>
-              <Button type="primary" htmlType="submit">
-                Start
-              </Button>
-            </Form.Item>
+            {selectedTable === "Turf" ? (
+              <>
+                <Form.Item
+                  name="startTime"
+                  label="Start Time"
+                  rules={[
+                    { required: true, message: "Please select start time" },
+                  ]}
+                >
+                  <Input
+                    type="datetime-local"
+                    min={moment().format("YYYY-MM-DDTHH:mm")}
+                  />
+                </Form.Item>
+                <Form.Item
+                  name="endTime"
+                  label="End Time"
+                  rules={[
+                    { required: true, message: "Please select end time" },
+                  ]}
+                >
+                  <Input
+                    type="datetime-local"
+                    min={moment().format("YYYY-MM-DDTHH:mm")}
+                  />
+                </Form.Item>
+                <Form.Item
+                  name="advancePayment"
+                  label="Advance Payment (Rs)"
+                  rules={[
+                    { required: true, message: "Please enter advance payment" },
+                  ]}
+                >
+                  <Input type="number" min={0} />
+                </Form.Item>
+                <Table
+                  dataSource={turfReservations.filter((res) => !res.isActive)}
+                  columns={reservationColumns}
+                  rowKey="id"
+                  pagination={false}
+                  size="small"
+                  style={{ marginBottom: 16 }}
+                />
+                <Form.Item>
+                  <Button type="primary" htmlType="submit">
+                    Reserve Turf
+                  </Button>
+                </Form.Item>
+              </>
+            ) : (
+              <Form.Item>
+                <Button type="primary" htmlType="submit">
+                  Start
+                </Button>
+              </Form.Item>
+            )}
           </Form>
         </Modal>
 
@@ -1885,6 +2067,11 @@ const PoolBillingSystem = ({
             <Dropdown overlay={getEditMenu()} trigger={["click"]}>
               <Button type="default">Add Item</Button>
             </Dropdown>
+            {editData?.gameType === "Turf" && (
+              <Form.Item name="advancePayment" label="Advance Payment (Rs)">
+                <Input disabled />
+              </Form.Item>
+            )}
             <Form.Item name="totalAmount" label="Total Amount (Rs)">
               <Input disabled />
             </Form.Item>
