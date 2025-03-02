@@ -112,8 +112,13 @@ const SalesReport = ({
     const tables = (await getTablesByDate(date, selectedLocation)) || [];
     const closedTables = tables.filter((table) => table.isClosed);
     const salesByGameType = closedTables.reduce((acc, entry) => {
-      const { gameType, totalAmount } = entry;
-      if (!gameType || totalAmount === undefined || gameType === "FOOD")
+      const { gameType, totalAmount, paymentOption } = entry;
+      if (
+        !gameType ||
+        totalAmount === undefined ||
+        gameType === "FOOD" ||
+        paymentOption !== "Paid"
+      )
         return acc;
       acc[gameType] = (acc[gameType] || 0) + (Number(totalAmount) || 0);
       return acc;
@@ -130,7 +135,6 @@ const SalesReport = ({
         )
       : 0;
 
-    // Include payments from the payments collection for the specific date
     const paymentsQuery = query(
       collection(db, "payments"),
       where("date", "==", date),
@@ -142,7 +146,17 @@ const SalesReport = ({
       return sum + (data.cashAmount || 0) + (data.onlineAmount || 0);
     }, 0);
 
-    return totalGameRevenue + foodItemsRevenue + paymentsRevenue;
+    // Include FOOD table cash and online payments explicitly
+    const foodPaymentsRevenue = foodRow
+      ? (foodRow.cashAmount || 0) + (foodRow.onlineAmount || 0)
+      : 0;
+
+    return (
+      totalGameRevenue +
+      foodItemsRevenue +
+      paymentsRevenue +
+      foodPaymentsRevenue
+    );
   };
 
   const saveTables = async (date, tables, location) => {
@@ -164,7 +178,6 @@ const SalesReport = ({
     setLoading(true);
     try {
       if (reportType === "daily") {
-        // Fetch sales data only for the selected date from the Navbar
         const tables =
           (await getTablesByDate(selectedDate, selectedLocation)) || [];
         setActiveTables(tables);
@@ -284,7 +297,7 @@ const SalesReport = ({
 
   useEffect(() => {
     fetchSalesData();
-  }, [selectedLocation, reportType, selectedDate]); // Added selectedDate as dependency
+  }, [selectedLocation, reportType, selectedDate]);
 
   const handleMonthClick = (monthKey) => {
     const monthTables = allMonthTables.filter(
@@ -438,7 +451,8 @@ const SalesReport = ({
     const startOfWeek = moment(selectedDate).startOf("week");
     const endOfWeek = moment(selectedDate).endOf("week");
     const totalRevenue = activeTables.reduce(
-      (sum, table) => sum + (table.totalAmount || 0),
+      (sum, table) =>
+        sum + (table.paymentOption === "Paid" ? table.totalAmount || 0 : 0),
       0
     );
     weeklyData.push({
@@ -453,12 +467,13 @@ const SalesReport = ({
   }
 
   const salesByGameType = activeTables.reduce((acc, entry) => {
-    const { gameType, totalAmount } = entry;
+    const { gameType, totalAmount, paymentOption } = entry;
     if (
       !gameType ||
       totalAmount === undefined ||
       gameType === "FOOD" ||
-      !entry.isClosed
+      !entry.isClosed ||
+      paymentOption !== "Paid"
     )
       return acc;
     acc[gameType] = (acc[gameType] || 0) + (Number(totalAmount) || 0);
