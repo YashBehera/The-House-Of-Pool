@@ -1722,7 +1722,7 @@ const PoolBillingSystem = ({
                               (t) => t.table === ground && !t.isClosed
                             )
                               ? "In Use"
-                              : "Start Turf"}
+                              : "Book Turf"}
                           </Button>
                           <h3>{ground}</h3>
                           {activeTables
