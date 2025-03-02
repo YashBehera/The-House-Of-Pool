@@ -5,6 +5,7 @@ import SalesReport from "./components/SalesReport";
 import Inventory from "./components/Inventory";
 import OldInventory from "./components/OldInventory";
 import NewInventory from "./components/NewInventory";
+import Expenses from "./components/Expenses";
 
 export default function App() {
   const [activeTables, setActiveTables] = useState([]); // Stores sales data
@@ -49,6 +50,15 @@ export default function App() {
                 setSelectedLocation={setSelectedLocation}
               />
             </>
+          }
+        />
+        <Route
+          path="/expenses"
+          element={
+            <Expenses
+              selectedLocation={selectedLocation}
+              setSelectedLocation={setSelectedLocation}
+            />
           }
         />
       </Routes>
