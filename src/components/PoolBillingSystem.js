@@ -1551,7 +1551,7 @@ const PoolBillingSystem = ({
                               fontWeight: "bold",
                               bottom: "127px",
                               position: "relative",
-                              right: "90px",
+                              right: "100px",
                             }}
                           >
                             <p>👤 {activeTable.name}</p>
@@ -1988,6 +1988,7 @@ const PoolBillingSystem = ({
           ]}
           style={{ marginTop: 20 }}
           loading={isLoading}
+          pagination={{ pageSize: 30 }}
         />
 
         <Modal
