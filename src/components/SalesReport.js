@@ -14,7 +14,6 @@ import {
   Button,
 } from "antd";
 import { SearchOutlined, MoneyCollectOutlined } from "@ant-design/icons";
-import { ITEM_PRICES } from "./PoolBillingSystem";
 import Navbar from "./Navbar";
 import moment from "moment";
 import {
@@ -32,6 +31,7 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import logo1 from "./HOP3.png";
 import logo2 from "./HOP5.png";
 import { db, auth } from "./firebase";
+import { getItemPrices } from "./PoolBillingSystem";
 const { Title } = Typography;
 const { Option } = Select;
 
@@ -66,6 +66,15 @@ const SalesReport = ({
   const [isPaymentHistoryModalOpen, setIsPaymentHistoryModalOpen] =
     useState(false);
   const [paymentHistory, setPaymentHistory] = useState([]);
+  const [ITEM_PRICES, setITEM_PRICES] = useState({});
+
+  useEffect(() => {
+    const fetchPrices = async () => {
+      const prices = await getItemPrices(selectedLocation);
+      setITEM_PRICES(prices);
+    };
+    fetchPrices();
+  }, [selectedLocation]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
