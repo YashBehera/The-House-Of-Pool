@@ -1,22 +1,43 @@
-import { EditOutlined, ReloadOutlined } from "@ant-design/icons";
+import {
+  EditOutlined,
+  ReloadOutlined,
+  DeleteOutlined,
+} from "@ant-design/icons";
 import { Button, Card, Input, Modal, Table, Tag, Typography } from "antd";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import moment from "moment";
 import React, { useEffect, useState } from "react";
 import { db } from "./firebase";
 import Navbar from "./Navbar";
-import { ITEM_PRICES } from "./PoolBillingSystem";
+import { getItemPrices } from "./PoolBillingSystem";
 
 const { Title } = Typography;
 
+const DEFAULT_ITEM_PRICES = {
+  Lays: 20,
+  Tin: 40,
+  "KitKat (Small)": 35,
+  "KitKat (Large)": 50,
+  "Drinks (Glass)": 20,
+  Water: 20,
+};
+
 const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
   const [newHouseStock, setNewHouseStock] = useState({});
-  const [initialStock, setInitialStock] = useState({}); // New state for initial stock
+  const [initialStock, setInitialStock] = useState({});
   const [showInitialStockModal, setShowInitialStockModal] = useState(false);
   const [showUpdateStockModal, setShowUpdateStockModal] = useState(false);
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
+  const [showRemoveConfirmModal, setShowRemoveConfirmModal] = useState(false);
+  const [itemToRemove, setItemToRemove] = useState(null);
   const [initialStockInput, setInitialStockInput] = useState({});
   const [updateStockInput, setUpdateStockInput] = useState({});
+  const [addItemInput, setAddItemInput] = useState({
+    name: "",
+    initial: "",
+    price: "",
+  });
   const [prevOrders, setPrevOrders] = useState({});
   const [selectedDate, setSelectedDate] = useState(
     moment().format("YYYY-MM-DD")
@@ -39,11 +60,12 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
           const initial = {};
           const current = {};
           Object.entries(inventory).forEach(([item, values]) => {
-            initial[item] = values.initial || values.available; // Preserve initial stock
+            initial[item] = values.initial || values.available;
             current[item] = {
               available: values.available,
               sold: values.sold,
-              initial: values.initial || values.available, // Ensure initial is set
+              initial: values.initial || values.available,
+              price: values.price || DEFAULT_ITEM_PRICES[item] || 0, // Preserve price or default
             };
           });
           setInitialStock(initial);
@@ -64,15 +86,15 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
     }));
   };
 
-  // ✅ Save Initial Stock
   const saveInitialStock = async () => {
     const newStock = {};
-    Object.keys(ITEM_PRICES).forEach((item) => {
+    Object.keys(DEFAULT_ITEM_PRICES).forEach((item) => {
       const initialQty = initialStockInput[item] || 0;
       newStock[item] = {
-        initial: initialQty, // Store initial stock
-        available: initialQty, // Set available to initial
+        initial: initialQty,
+        available: initialQty,
         sold: 0,
+        price: DEFAULT_ITEM_PRICES[item], // Include price from ITEM_PRICES
       };
     });
 
@@ -86,7 +108,6 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
     setShowInitialStockModal(false);
   };
 
-  // ✅ Reset Inventory
   const resetInventory = () => {
     console.log(
       "resetInventory clicked, current newHouseStock:",
@@ -97,10 +118,10 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
 
   const confirmReset = () => {
     console.log("Reset confirmed, clearing newHouseStock");
-    setNewHouseStock({}); // Clear current stock
-    setInitialStock({}); // Clear initial stock
+    setNewHouseStock({});
+    setInitialStock({});
     setPrevOrders({});
-    setShowInitialStockModal(true); // Prompt for new initial values
+    setShowInitialStockModal(true);
     setShowResetConfirmModal(false);
   };
 
@@ -109,7 +130,6 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
     setShowResetConfirmModal(false);
   };
 
-  // ✅ Handle Inventory Update Input
   const handleUpdateStockChange = (item, value) => {
     setUpdateStockInput((prev) => ({
       ...prev,
@@ -117,14 +137,12 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
     }));
   };
 
-  // ✅ Update Inventory Quantity
   const updateStock = async () => {
     const updatedStock = { ...newHouseStock };
-
     Object.entries(updateStockInput).forEach(([item, quantity]) => {
       if (updatedStock[item]) {
         updatedStock[item].available = Math.max(0, quantity);
-        // Initial stock remains unchanged
+        // Preserve existing price
       }
     });
 
@@ -133,7 +151,66 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
     setShowUpdateStockModal(false);
   };
 
-  // ✅ Stock Level Indicator
+  const handleAddItemChange = (field, value) => {
+    setAddItemInput((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const addItem = async () => {
+    const { name, initial, price } = addItemInput;
+    if (!name || !initial || !price) {
+      alert("Please enter item name, initial stock, and price.");
+      return;
+    }
+    const initialQty = parseInt(initial) || 0;
+    const itemPrice = parseFloat(price) || 0;
+    const updatedStock = {
+      ...newHouseStock,
+      [name]: {
+        initial: initialQty,
+        available: initialQty,
+        sold: 0,
+        price: itemPrice,
+      },
+    };
+
+    await saveInventory(updatedStock);
+    setNewHouseStock(updatedStock);
+    setInitialStock((prev) => ({
+      ...prev,
+      [name]: initialQty,
+    }));
+    setShowAddItemModal(false);
+    setAddItemInput({ name: "", initial: "", price: "" });
+  };
+
+  const promptRemoveItem = (item) => {
+    setItemToRemove(item);
+    setShowRemoveConfirmModal(true);
+  };
+
+  const confirmRemoveItem = async () => {
+    if (!itemToRemove) return;
+    const updatedStock = { ...newHouseStock };
+    delete updatedStock[itemToRemove];
+    await saveInventory(updatedStock);
+    setNewHouseStock(updatedStock);
+    setInitialStock((prev) => {
+      const newInitial = { ...prev };
+      delete newInitial[itemToRemove];
+      return newInitial;
+    });
+    setShowRemoveConfirmModal(false);
+    setItemToRemove(null);
+  };
+
+  const cancelRemoveItem = () => {
+    setShowRemoveConfirmModal(false);
+    setItemToRemove(null);
+  };
+
   const getStockTag = (quantity) => {
     if (quantity === 0) return <Tag color="red">Out of Stock</Tag>;
     if (quantity <= 3) return <Tag color="orange">Low Stock</Tag>;
@@ -141,7 +218,6 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
     return <Tag color="green">In Stock</Tag>;
   };
 
-  // ✅ Table Columns
   const columns = [
     {
       title: "Item",
@@ -150,7 +226,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
       render: (text) => <strong>{text}</strong>,
     },
     {
-      title: "Stock", // New column for initial stock
+      title: "Stock",
       dataIndex: "initial",
       key: "initial",
       render: (quantity) => <Tag color="purple">{quantity}</Tag>,
@@ -180,6 +256,20 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
         </>
       ),
     },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_, record) => (
+        <Button
+          type="link"
+          icon={<DeleteOutlined />}
+          onClick={() => promptRemoveItem(record.item)}
+          danger
+        >
+          Remove
+        </Button>
+      ),
+    },
   ];
 
   if (selectedLocation !== "New House Of Pool") return null;
@@ -197,7 +287,6 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
           🏪 New House Of Pool Inventory
         </Title>
 
-        {/* Update Inventory Button */}
         <Button
           type="primary"
           icon={<EditOutlined />}
@@ -207,7 +296,6 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
           Update Inventory
         </Button>
 
-        {/* Reset Inventory Button */}
         <Button
           type="primary"
           icon={<ReloadOutlined />}
@@ -217,14 +305,26 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
           Reset Inventory
         </Button>
 
-        {/* Inventory Table */}
+        <Button
+          type="primary"
+          onClick={() => setShowAddItemModal(true)}
+          style={{
+            ...styles.updateButton,
+            backgroundColor: "#52c41a",
+            borderColor: "#52c41a",
+            margin: "10px",
+          }}
+        >
+          Add Items
+        </Button>
+
         <Table
           dataSource={
             newHouseStock
               ? Object.entries(newHouseStock).map(([item, values]) => ({
                   key: item,
                   item,
-                  initial: values.initial, // New field for initial stock
+                  initial: values.initial,
                   available: values.available,
                   sold: values.sold,
                 }))
@@ -251,7 +351,6 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
           </p>
         </Modal>
 
-        {/* Modal for Initial Stock Input */}
         <Modal
           title="Set Initial Stock"
           open={showInitialStockModal}
@@ -269,7 +368,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
             </Button>,
           ]}
         >
-          {Object.keys(ITEM_PRICES).map((item) => (
+          {Object.keys(DEFAULT_ITEM_PRICES).map((item) => (
             <div key={item} style={styles.modalInput}>
               <label>{item}:</label>
               <Input
@@ -284,7 +383,6 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
           ))}
         </Modal>
 
-        {/* Modal for Updating Inventory */}
         <Modal
           title="Update Inventory"
           open={showUpdateStockModal}
@@ -315,12 +413,74 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
             </div>
           ))}
         </Modal>
+
+        <Modal
+          title="Add New Item"
+          open={showAddItemModal}
+          onOk={addItem}
+          onCancel={() => setShowAddItemModal(false)}
+          footer={[
+            <Button key="cancel" onClick={() => setShowAddItemModal(false)}>
+              Cancel
+            </Button>,
+            <Button key="save" type="primary" onClick={addItem}>
+              Add
+            </Button>,
+          ]}
+        >
+          <div style={styles.modalInput}>
+            <label>Item Name:</label>
+            <Input
+              value={addItemInput.name}
+              onChange={(e) => handleAddItemChange("name", e.target.value)}
+              placeholder="Enter item name"
+              style={styles.inputField}
+            />
+          </div>
+          <div style={styles.modalInput}>
+            <label>Initial Stock:</label>
+            <Input
+              type="number"
+              min="0"
+              value={addItemInput.initial}
+              onChange={(e) => handleAddItemChange("initial", e.target.value)}
+              placeholder="Enter initial quantity"
+              style={styles.inputField}
+            />
+          </div>
+          <div style={styles.modalInput}>
+            <label>Price (Rs):</label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={addItemInput.price}
+              onChange={(e) => handleAddItemChange("price", e.target.value)}
+              placeholder="Enter price"
+              style={styles.inputField}
+            />
+          </div>
+        </Modal>
+
+        <Modal
+          title="Confirm Removal"
+          open={showRemoveConfirmModal}
+          onOk={confirmRemoveItem}
+          onCancel={cancelRemoveItem}
+          okText="Yes"
+          okButtonProps={{ danger: true }}
+          cancelText="No"
+        >
+          <p>
+            Are you sure you want to remove the item "{itemToRemove}" from the
+            inventory?
+          </p>
+        </Modal>
       </Card>
     </div>
   );
 };
 
-// ✅ Styles for UI
 const styles = {
   card: {
     margin: "20px",
