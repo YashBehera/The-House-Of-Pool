@@ -1,26 +1,57 @@
-import { EditOutlined, ReloadOutlined } from "@ant-design/icons";
+import {
+  DeleteOutlined,
+  EditOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
 import { Button, Card, Input, Modal, Table, Tag, Typography } from "antd";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import moment from "moment";
 import React, { useEffect, useState } from "react";
 import { db } from "./firebase";
 import Navbar from "./Navbar";
-import { ITEM_PRICES } from "./PoolBillingSystem";
+import { getItemPrices } from "./PoolBillingSystem";
 
 const { Title } = Typography;
 
+// Default prices for initial items (can be overridden by Firestore)
+const DEFAULT_ITEM_PRICES = {
+  Lays: 20,
+  Tin: 40,
+  "KitKat (Small)": 35,
+  "KitKat (Large)": 50,
+  "Drinks (Glass)": 20,
+  Water: 20,
+};
+
 const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
   const [oldHouseStock, setOldHouseStock] = useState({});
-  const [initialStock, setInitialStock] = useState({}); // New state for initial stock
+  const [initialStock, setInitialStock] = useState({});
   const [showInitialStockModal, setShowInitialStockModal] = useState(false);
   const [showUpdateStockModal, setShowUpdateStockModal] = useState(false);
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
+  const [showRemoveConfirmModal, setShowRemoveConfirmModal] = useState(false);
+  const [itemToRemove, setItemToRemove] = useState(null);
   const [initialStockInput, setInitialStockInput] = useState({});
   const [updateStockInput, setUpdateStockInput] = useState({});
+  const [addItemInput, setAddItemInput] = useState({
+    name: "",
+    initial: "",
+    price: "",
+  }); // Added price field
   const [prevOrders, setPrevOrders] = useState({});
   const [selectedDate, setSelectedDate] = useState(
     moment().format("YYYY-MM-DD")
   );
+  const [ITEM_PRICES, setITEM_PRICES] = useState({});
+
+  useEffect(() => {
+    const fetchPrices = async () => {
+      const prices = await getItemPrices(selectedLocation);
+      setITEM_PRICES(prices);
+    };
+    fetchPrices();
+  }, [selectedLocation]);
 
   const saveInventory = async (inventory) => {
     await setDoc(doc(db, "inventory", "oldHouseStock"), { data: inventory });
@@ -39,11 +70,12 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
           const initial = {};
           const current = {};
           Object.entries(inventory).forEach(([item, values]) => {
-            initial[item] = values.initial || values.available; // Preserve initial stock
+            initial[item] = values.initial || values.available;
             current[item] = {
               available: values.available,
               sold: values.sold,
-              initial: values.initial || values.available, // Ensure initial is set
+              initial: values.initial || values.available,
+              price: values.price || DEFAULT_ITEM_PRICES[item] || 0, // Preserve price or default
             };
           });
           setInitialStock(initial);
@@ -66,12 +98,13 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
 
   const saveInitialStock = async () => {
     const oldStock = {};
-    Object.keys(ITEM_PRICES).forEach((item) => {
+    Object.keys(DEFAULT_ITEM_PRICES).forEach((item) => {
       const initialQty = initialStockInput[item] || 0;
       oldStock[item] = {
-        initial: initialQty, // Store initial stock
-        available: initialQty, // Set available to initial
+        initial: initialQty,
+        available: initialQty,
         sold: 0,
+        price: DEFAULT_ITEM_PRICES[item], // Include default price
       };
     });
 
@@ -95,10 +128,10 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
 
   const confirmReset = () => {
     console.log("Reset confirmed, clearing oldHouseStock");
-    setOldHouseStock({}); // Clear current stock
-    setInitialStock({}); // Clear initial stock
+    setOldHouseStock({});
+    setInitialStock({});
     setPrevOrders({});
-    setShowInitialStockModal(true); // Prompt for new initial values
+    setShowInitialStockModal(true);
     setShowResetConfirmModal(false);
   };
 
@@ -120,13 +153,72 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
     Object.entries(updateStockInput).forEach(([item, quantity]) => {
       if (updatedStock[item]) {
         updatedStock[item].available = Math.max(0, quantity);
-        // Initial stock remains unchanged
       }
     });
 
     await saveInventory(updatedStock);
     setOldHouseStock(updatedStock);
     setShowUpdateStockModal(false);
+  };
+
+  const handleAddItemChange = (field, value) => {
+    setAddItemInput((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const addItem = async () => {
+    const { name, initial, price } = addItemInput;
+    if (!name || !initial || !price) {
+      alert("Please enter item name, initial stock, and price.");
+      return;
+    }
+    const initialQty = parseInt(initial) || 0;
+    const itemPrice = parseFloat(price) || 0;
+    const updatedStock = {
+      ...oldHouseStock,
+      [name]: {
+        initial: initialQty,
+        available: initialQty,
+        sold: 0,
+        price: itemPrice, // Store the price
+      },
+    };
+
+    await saveInventory(updatedStock);
+    setOldHouseStock(updatedStock);
+    setInitialStock((prev) => ({
+      ...prev,
+      [name]: initialQty,
+    }));
+    setShowAddItemModal(false);
+    setAddItemInput({ name: "", initial: "", price: "" });
+  };
+
+  const promptRemoveItem = (item) => {
+    setItemToRemove(item);
+    setShowRemoveConfirmModal(true);
+  };
+
+  const confirmRemoveItem = async () => {
+    if (!itemToRemove) return;
+    const updatedStock = { ...oldHouseStock };
+    delete updatedStock[itemToRemove];
+    await saveInventory(updatedStock);
+    setOldHouseStock(updatedStock);
+    setInitialStock((prev) => {
+      const newInitial = { ...prev };
+      delete newInitial[itemToRemove];
+      return newInitial;
+    });
+    setShowRemoveConfirmModal(false);
+    setItemToRemove(null);
+  };
+
+  const cancelRemoveItem = () => {
+    setShowRemoveConfirmModal(false);
+    setItemToRemove(null);
   };
 
   const getStockTag = (quantity) => {
@@ -144,7 +236,7 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
       render: (text) => <strong>{text}</strong>,
     },
     {
-      title: "Stock", // New column for initial stock
+      title: "Stock",
       dataIndex: "initial",
       key: "initial",
       render: (quantity) => <Tag color="purple">{quantity}</Tag>,
@@ -172,6 +264,20 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
           </span>
           {getStockTag(quantity)}
         </>
+      ),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_, record) => (
+        <Button
+          type="link"
+          icon={<DeleteOutlined />}
+          onClick={() => promptRemoveItem(record.item)}
+          danger
+        >
+          Remove
+        </Button>
       ),
     },
   ];
@@ -209,13 +315,26 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
           Reset Inventory
         </Button>
 
+        <Button
+          type="primary"
+          onClick={() => setShowAddItemModal(true)}
+          style={{
+            ...styles.updateButton,
+            backgroundColor: "#52c41a",
+            borderColor: "#52c41a",
+            margin: "10px",
+          }}
+        >
+          Add Items
+        </Button>
+
         <Table
           dataSource={
             oldHouseStock
               ? Object.entries(oldHouseStock).map(([item, values]) => ({
                   key: item,
                   item,
-                  initial: values.initial, // New field for initial stock
+                  initial: values.initial,
                   available: values.available,
                   sold: values.sold,
                 }))
@@ -259,7 +378,7 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
             </Button>,
           ]}
         >
-          {Object.keys(ITEM_PRICES).map((item) => (
+          {Object.keys(DEFAULT_ITEM_PRICES).map((item) => (
             <div key={item} style={styles.modalInput}>
               <label>{item}:</label>
               <Input
@@ -304,6 +423,69 @@ const OldInventory = ({ selectedLocation, setSelectedLocation }) => {
             </div>
           ))}
         </Modal>
+
+        <Modal
+          title="Add New Item"
+          open={showAddItemModal}
+          onOk={addItem}
+          onCancel={() => setShowAddItemModal(false)}
+          footer={[
+            <Button key="cancel" onClick={() => setShowAddItemModal(false)}>
+              Cancel
+            </Button>,
+            <Button key="save" type="primary" onClick={addItem}>
+              Add
+            </Button>,
+          ]}
+        >
+          <div style={styles.modalInput}>
+            <label>Item Name:</label>
+            <Input
+              value={addItemInput.name}
+              onChange={(e) => handleAddItemChange("name", e.target.value)}
+              placeholder="Enter item name"
+              style={styles.inputField}
+            />
+          </div>
+          <div style={styles.modalInput}>
+            <label>Initial Stock:</label>
+            <Input
+              type="number"
+              min="0"
+              value={addItemInput.initial}
+              onChange={(e) => handleAddItemChange("initial", e.target.value)}
+              placeholder="Enter initial quantity"
+              style={styles.inputField}
+            />
+          </div>
+          <div style={styles.modalInput}>
+            <label>Price (Rs):</label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={addItemInput.price}
+              onChange={(e) => handleAddItemChange("price", e.target.value)}
+              placeholder="Enter price"
+              style={styles.inputField}
+            />
+          </div>
+        </Modal>
+
+        <Modal
+          title="Confirm Removal"
+          open={showRemoveConfirmModal}
+          onOk={confirmRemoveItem}
+          onCancel={cancelRemoveItem}
+          okText="Yes"
+          okButtonProps={{ danger: true }}
+          cancelText="No"
+        >
+          <p>
+            Are you sure you want to remove the item "{itemToRemove}" from the
+            inventory?
+          </p>
+        </Modal>
       </Card>
     </div>
   );
@@ -344,6 +526,22 @@ const styles = {
     width: "100%",
     marginTop: "5px",
   },
+};
+
+// Function to get current inventory items and prices
+export const getInventoryItems = async () => {
+  const docSnap = await onSnapshot(
+    doc(db, "inventory", "oldHouseStock"),
+    (docSnap) => {
+      const inventory = docSnap.exists() ? docSnap.data().data : {};
+      const items = {};
+      Object.entries(inventory).forEach(([item, values]) => {
+        items[item] = values.price || DEFAULT_ITEM_PRICES[item] || 0;
+      });
+      return { ...DEFAULT_ITEM_PRICES, ...items };
+    }
+  );
+  return docSnap;
 };
 
 export default OldInventory;
