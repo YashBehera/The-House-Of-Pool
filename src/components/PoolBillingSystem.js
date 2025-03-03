@@ -73,13 +73,16 @@ const NEW_HOUSE_CONFIG = {
   turf: [],
 };
 
-const ITEM_PRICES = {
-  Lays: 20,
-  Tin: 40,
-  "KitKat (Small)": 35,
-  "KitKat (Large)": 50,
-  "Drinks (Glass)": 20,
-  Water: 20,
+export const getItemPrices = async (location) => {
+  const docId =
+    location === "Old House Of Pool" ? "oldHouseStock" : "newHouseStock";
+  const docSnap = await getDoc(doc(db, "inventory", docId));
+  const inventory = docSnap.exists() ? docSnap.data().data : {};
+  const prices = {};
+  Object.entries(inventory).forEach(([item, values]) => {
+    prices[item] = values.price || 0;
+  });
+  return prices;
 };
 
 const PoolBillingSystem = ({
@@ -114,6 +117,33 @@ const PoolBillingSystem = ({
   const [turfReservations, setTurfReservations] = useState([]);
   const [isEditingTurf, setIsEditingTurf] = useState(false);
   const [editingReservationId, setEditingReservationId] = useState(null);
+  const [ITEM_PRICES, setITEM_PRICES] = useState({}); // New state for dynamic item prices
+
+  useEffect(() => {
+    if (!isAuthenticated || !selectedLocation) return;
+
+    const docId =
+      selectedLocation === LOCATIONS.OLD_HOUSE
+        ? "oldHouseStock"
+        : "newHouseStock";
+    const unsubscribe = onSnapshot(
+      doc(db, "inventory", docId),
+      (docSnap) => {
+        const inventory = docSnap.exists() ? docSnap.data().data : {};
+        const prices = {};
+        Object.entries(inventory).forEach(([item, values]) => {
+          prices[item] = values.price || 0;
+        });
+        setITEM_PRICES(prices);
+      },
+      (error) => {
+        console.error("Error fetching inventory:", error);
+        setITEM_PRICES({}); // Fallback to empty object on error
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isAuthenticated, selectedLocation]);
 
   const editTurfReservation = (reservation) => {
     setIsEditingTurf(true);
@@ -2305,4 +2335,3 @@ const PoolBillingSystem = ({
 };
 
 export default PoolBillingSystem;
-export { ITEM_PRICES };
