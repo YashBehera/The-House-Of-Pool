@@ -127,55 +127,6 @@ const Navbar = ({
     setIsActionDropdownOpen(true);
   };
 
-  const handleLoginSubmit = async (values) => {
-    try {
-      const userCredential = await signInWithEmailAndPassword(
-        auth,
-        values.email
-      );
-      const user = userCredential.user;
-      setIsActionDropdownOpen(false);
-      loginForm.resetFields();
-
-      // Set user role based on credentials
-      if (values.email === "hop@gmail.com") {
-        setUserRole("full");
-        switch (dropdownAction) {
-          case "inventory":
-            navigate("/inventory");
-            break;
-          case "reports":
-            navigate("/reports");
-            break;
-          case "expenses":
-            navigate("/expenses");
-            break;
-          case "location":
-            if (pendingLocation) {
-              setSelectedLocation(pendingLocation);
-              setPendingLocation(null);
-            }
-            break;
-          default:
-            navigate("/"); // Default to Home
-            break;
-        }
-      } else if (values.email === "staff@gmail.com") {
-        setUserRole("restricted");
-        navigate("/"); // Restricted users go to Home
-        alert("You have restricted access and can only view the Home page.");
-      } else {
-        setUserRole("unknown");
-        navigate("/"); // Unknown users go to Home
-        alert("Your account does not have access to restricted features.");
-      }
-    } catch (error) {
-      console.error("Login failed:", error);
-      alert("Invalid email or password. Please try again.");
-      setPendingLocation(null);
-    }
-  };
-
   const handleRestrictedAction = (action) => {
     if (!userRole) {
       alert("You do not have permission to access this feature.");
@@ -190,6 +141,7 @@ const Navbar = ({
         case "expenses":
           navigate("/expenses");
           break;
+
         default:
           break;
       }
@@ -268,6 +220,13 @@ const Navbar = ({
           onClick={() => handleRestrictedAction("expenses")}
         >
           <span className="text-white">Expenses</span>
+        </Button>
+        <Button
+          type="link"
+          className="text-white text-base hover:text-gray-300"
+          onClick={() => navigate("/queue")}
+        >
+          <span className="text-white">Waiting Queue</span>
         </Button>
         {userRole !== "restricted" ? (
           <Select
