@@ -18,6 +18,24 @@ import { v4 as uuidv4 } from "uuid";
 const { Title } = Typography;
 const { Option } = Select;
 
+// Constants from PoolBillingSystem.js
+const LOCATIONS = {
+  OLD_HOUSE: "Old House Of Pool",
+  NEW_HOUSE: "New House Of Pool",
+};
+
+const OLD_HOUSE_CONFIG = {
+  tables: Array.from({ length: 14 }, (_, i) => `Table ${i + 1}`),
+  ps: Array.from({ length: 6 }, (_, i) => `Controller ${i + 1}`),
+  tt: ["Table Tennis 1", "Table Tennis 2"],
+};
+
+const NEW_HOUSE_CONFIG = {
+  tables: Array.from({ length: 5 }, (_, i) => `Table ${i + 1}`),
+  ps: [],
+  tt: [],
+};
+
 const Queue = ({
   selectedLocation,
   setSelectedLocation,
@@ -42,26 +60,36 @@ const Queue = ({
     "PS5",
   ];
 
-  const ALL_APPOINTMENT_OPTIONS = [
-    ...Array.from({ length: 14 }, (_, i) => `Table ${i + 1}`),
-    ...Array.from({ length: 6 }, (_, i) => `Controller ${i + 1}`),
-    "Table Tennis 1",
-    "Table Tennis 2",
-  ];
+  // Define all appointment options based on location
+  const getAllAppointmentOptions = () => {
+    if (selectedLocation === LOCATIONS.OLD_HOUSE) {
+      return [
+        ...OLD_HOUSE_CONFIG.tables,
+        ...OLD_HOUSE_CONFIG.ps,
+        ...OLD_HOUSE_CONFIG.tt,
+      ];
+    } else if (selectedLocation === LOCATIONS.NEW_HOUSE) {
+      return [...NEW_HOUSE_CONFIG.tables];
+    }
+    return [];
+  };
 
-  // Filter available options based on activeTables
+  // Filter available options based on activeTables and location
   const getAvailableOptions = () => {
+    const allOptions = getAllAppointmentOptions();
     const activeTableNames = activeTables
-      .filter((table) => !table.isClosed) // Only consider tables that are not closed
-      .map((table) => table.table); // Get the table names
+      .filter((table) => !table.isClosed && table.location === selectedLocation)
+      .map((table) => table.table);
 
-    return ALL_APPOINTMENT_OPTIONS.filter(
-      (option) => !activeTableNames.includes(option)
-    );
+    return allOptions.filter((option) => !activeTableNames.includes(option));
   };
 
   const saveQueue = async (queue) => {
-    await setDoc(doc(db, "queue", "waitingList"), { data: queue });
+    const queueDocId =
+      selectedLocation === LOCATIONS.OLD_HOUSE
+        ? "oldHouseQueue"
+        : "newHouseQueue";
+    await setDoc(doc(db, "queue", queueDocId), { data: queue });
   };
 
   const saveTables = async (date, tables, location) => {
@@ -79,8 +107,14 @@ const Queue = ({
   };
 
   useEffect(() => {
+    if (!selectedLocation) return;
+
+    const queueDocId =
+      selectedLocation === LOCATIONS.OLD_HOUSE
+        ? "oldHouseQueue"
+        : "newHouseQueue";
     const unsub = onSnapshot(
-      doc(db, "queue", "waitingList"),
+      doc(db, "queue", queueDocId),
       (docSnap) => {
         const queue = docSnap.exists() ? docSnap.data().data : [];
         setQueueData(queue);
@@ -90,7 +124,7 @@ const Queue = ({
       }
     );
     return () => unsub();
-  }, []);
+  }, [selectedLocation]);
 
   const handleAddQueue = (values) => {
     const newEntry = {
@@ -196,6 +230,8 @@ const Queue = ({
     },
   ];
 
+  if (!selectedLocation) return null;
+
   return (
     <div>
       <Navbar
@@ -206,7 +242,7 @@ const Queue = ({
       />
       <Card style={styles.card}>
         <Title level={3} style={styles.title}>
-          🎱 Queue Waiting List
+          🎱 {selectedLocation} Queue Waiting List
         </Title>
 
         <Button
@@ -270,7 +306,10 @@ const Queue = ({
                 placeholder="Select game types"
                 allowClear
               >
-                {GAME_TYPES.map((type) => (
+                {GAME_TYPES.filter((type) => {
+                  if (selectedLocation === LOCATIONS.OLD_HOUSE) return true;
+                  return type !== "Table Tennis" && type !== "PS5"; // New House only has pool tables
+                }).map((type) => (
                   <Option key={type} value={type}>
                     {type}
                   </Option>
