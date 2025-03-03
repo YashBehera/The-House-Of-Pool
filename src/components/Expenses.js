@@ -223,10 +223,9 @@ const Expenses = ({ selectedLocation, setSelectedLocation }) => {
               label="Amount"
               rules={[
                 { required: true, message: "Please enter the amount" },
-                { type: "number", min: 0, message: "Amount must be positive" },
               ]}
             >
-              <Input type="number" step="0.01" placeholder="Enter amount" />
+              <Input type="number" min="0" placeholder="Enter amount" />
             </Form.Item>
             <Form.Item>
               <Button type="primary" htmlType="submit" disabled={loading}>
@@ -262,10 +261,9 @@ const Expenses = ({ selectedLocation, setSelectedLocation }) => {
               label="Amount"
               rules={[
                 { required: true, message: "Please enter the amount" },
-                { type: "number", min: 0, message: "Amount must be positive" },
               ]}
             >
-              <Input type="number" step="0.01" placeholder="Enter amount" />
+              <Input type="number" min="0" placeholder="Enter amount" />
             </Form.Item>
             <Form.Item>
               <Button type="primary" htmlType="submit" disabled={loading}>
