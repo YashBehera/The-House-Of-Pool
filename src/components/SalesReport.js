@@ -150,6 +150,7 @@ const SalesReport = ({
 
       if (reportType === "daily") {
         tables = (await getTablesByDate(selectedDate, selectedLocation)) || [];
+        console.log("Fetched Tables:", tables);
         setActiveTables(tables);
 
         const reportDocRef = doc(
@@ -158,87 +159,108 @@ const SalesReport = ({
           `${selectedLocation}_${selectedDate}`
         );
         const reportSnap = await getDoc(reportDocRef);
-        if (reportSnap.exists()) {
-          const reportData = reportSnap.data();
-          totalRevenue = reportData.totalRevenue || 0;
-          cashRevenue = reportData.cashRevenue || 0;
-          onlineRevenue = reportData.onlineRevenue || 0;
-          balanceReceived = reportData.balanceReceived || 0;
-          salesByGameType = reportData.salesByGameType || {};
-          salesByItems = reportData.salesByItems || {};
-        } else {
-          const foodRow = tables.find((entry) => entry.name === "FOOD");
-          const nonFoodTablesRevenue = tables.reduce((acc, entry) => {
-            const { totalAmount, paymentOption, isClosed, gameType } = entry;
-            if (
-              !isClosed ||
-              paymentOption !== "Paid" ||
-              totalAmount === undefined ||
-              gameType === "FOOD"
-            )
-              return acc;
-            return acc + Number(totalAmount);
-          }, 0);
 
-          const foodItemsRevenue = foodRow
-            ? foodRow.orderedItems.reduce(
-                (sum, item) => sum + (ITEM_PRICES[item] || 0),
-                0
-              )
-            : 0;
-          const foodPaymentsRevenue = foodRow
-            ? (foodRow.cashAmount || 0) + (foodRow.onlineAmount || 0)
-            : 0;
-          const foodTotalRevenue =
-            foodRow && foodRow.isClosed && foodRow.paymentOption === "Paid"
-              ? Number(foodRow.totalAmount || 0) + foodPaymentsRevenue
-              : foodItemsRevenue + foodPaymentsRevenue;
+        // Always recalculate totals based on latest tables data
+        const foodRow = tables.find((entry) => entry.name === "FOOD");
+        console.log("Food Row:", foodRow);
 
-          totalRevenue = nonFoodTablesRevenue + foodTotalRevenue;
-          cashRevenue = tables.reduce(
-            (sum, entry) => sum + (Number(entry.cashAmount) || 0),
-            0
-          );
-          onlineRevenue = tables.reduce(
-            (sum, entry) => sum + (Number(entry.onlineAmount) || 0),
-            0
-          );
-          balanceReceived = foodPaymentsRevenue;
+        const nonFoodTablesRevenue = tables.reduce((acc, entry) => {
+          const { totalAmount, paymentOption, isClosed, gameType } = entry;
+          if (
+            !isClosed ||
+            paymentOption !== "Paid" ||
+            totalAmount === undefined ||
+            gameType === "FOOD"
+          )
+            return acc;
+          return acc + Number(totalAmount);
+        }, 0);
+        console.log("Non-Food Tables Revenue:", nonFoodTablesRevenue);
 
-          salesByGameType = tables.reduce((acc, entry) => {
-            const { gameType, totalAmount, paymentOption, orderedItems } =
-              entry;
-            if (
-              !gameType ||
-              totalAmount === undefined ||
-              gameType === "FOOD" ||
-              !entry.isClosed ||
-              paymentOption !== "Paid"
-            )
-              return acc;
-            const itemCost = orderedItems.reduce(
+        const foodItemsRevenue = foodRow
+          ? foodRow.orderedItems.reduce(
               (sum, item) => sum + (ITEM_PRICES[item] || 0),
               0
-            );
-            const gameRevenue = Number(totalAmount) - itemCost;
-            acc[gameType] =
-              (acc[gameType] || 0) + (gameRevenue > 0 ? gameRevenue : 0);
-            return acc;
-          }, {});
+            )
+          : 0;
+        console.log("Food Items Revenue:", foodItemsRevenue);
 
-          salesByItems = tables.reduce((acc, entry) => {
-            entry.orderedItems.forEach((item) => {
-              acc[item] = (acc[item] || 0) + 1;
-            });
-            return acc;
-          }, {});
-        }
+        const foodPaymentsRevenue = foodRow
+          ? (foodRow.cashAmount || 0) + (foodRow.onlineAmount || 0)
+          : 0;
+        console.log("Food Payments Revenue:", foodPaymentsRevenue);
 
-        // Update state for daily report
+        const foodTotalRevenue =
+          foodRow && foodRow.isClosed && foodRow.paymentOption === "Paid"
+            ? Number(foodRow.totalAmount || 0) + foodPaymentsRevenue
+            : foodItemsRevenue + foodPaymentsRevenue;
+        console.log("Food Total Revenue:", foodTotalRevenue);
+
+        totalRevenue = nonFoodTablesRevenue + foodTotalRevenue;
+        console.log("Calculated Total Revenue:", totalRevenue);
+
+        cashRevenue = tables.reduce(
+          (sum, entry) => sum + (Number(entry.cashAmount) || 0),
+          0
+        );
+        onlineRevenue = tables.reduce(
+          (sum, entry) => sum + (Number(entry.onlineAmount) || 0),
+          0
+        );
+        balanceReceived = foodPaymentsRevenue;
+
+        salesByGameType = tables.reduce((acc, entry) => {
+          const { gameType, totalAmount, paymentOption, orderedItems } = entry;
+          if (
+            !gameType ||
+            totalAmount === undefined ||
+            gameType === "FOOD" ||
+            !entry.isClosed ||
+            paymentOption !== "Paid"
+          )
+            return acc;
+          const itemCost = orderedItems.reduce(
+            (sum, item) => sum + (ITEM_PRICES[item] || 0),
+            0
+          );
+          const gameRevenue = Number(totalAmount) - itemCost;
+          acc[gameType] =
+            (acc[gameType] || 0) + (gameRevenue > 0 ? gameRevenue : 0);
+          return acc;
+        }, {});
+
+        salesByItems = tables.reduce((acc, entry) => {
+          entry.orderedItems.forEach((item) => {
+            acc[item] = (acc[item] || 0) + 1;
+          });
+          return acc;
+        }, {});
+
+        // Merge existing Firestore data with new calculations
+        const existingData = reportSnap.exists() ? reportSnap.data() : {};
+        const updatedReportData = {
+          totalRevenue,
+          cashRevenue,
+          onlineRevenue,
+          balanceReceived,
+          salesByGameType,
+          salesByItems,
+          lastUpdated: new Date().toISOString(),
+        };
+        console.log("Saving to Firestore:", updatedReportData);
+        await setDoc(reportDocRef, updatedReportData, { merge: true });
+
+        // Update state
         setTotalRevenue(totalRevenue);
         setCashRevenue(cashRevenue);
         setOnlineRevenue(onlineRevenue);
         setBalanceReceived(balanceReceived);
+        console.log("State Updated:", {
+          totalRevenue,
+          cashRevenue,
+          onlineRevenue,
+          balanceReceived,
+        });
       } else if (reportType === "custom" && dateRange.length === 2) {
         const [start, end] = dateRange;
         const startDate = moment(start).startOf("day");
@@ -430,16 +452,19 @@ const SalesReport = ({
     console.log("Daily - foodTotalRevenue:", foodTotalRevenue);
 
     setTotalRevenue(newTotalRevenue);
+    console.log(totalRevenue);
     setCashRevenue(newCashRevenue);
     setOnlineRevenue(newOnlineRevenue);
     setBalanceReceived(newBalanceReceived);
   }, [activeTables, ITEM_PRICES, reportType]); // Add reportType to dependencies
 
   useEffect(() => {
+    if (Object.keys(ITEM_PRICES).length === 0) return; // Wait for prices
     fetchSalesData();
-  }, [selectedLocation, reportType, selectedDate, dateRange]);
+  }, [selectedLocation, reportType, selectedDate, dateRange, ITEM_PRICES]);
 
   const handleEditCustomer = (customer) => {
+    console.log("handleEditCustomer called with:", customer); // Debug
     setEditCustomerData(customer);
     setIsEditCustomerModalOpen(true);
     editCustomerForm.setFieldsValue({
@@ -461,45 +486,36 @@ const SalesReport = ({
     const totalPayment = cashPaymentAmount + onlinePaymentAmount;
     const newDues = Math.max(0, currentDues - totalPayment);
 
-    await updateDoc(customerRef, { dues: newDues });
+    try {
+      // Update the customer's dues in the regularCustomers collection
+      await updateDoc(customerRef, { dues: newDues });
 
-    if (totalPayment > 0) {
-      const tables =
-        (await getTablesByDate(selectedDate, selectedLocation)) || [];
-      let foodTable = tables.find((entry) => entry.name === "FOOD");
-      if (!foodTable) {
-        foodTable = {
-          id: `${selectedDate}-FOOD`,
-          table: "Food",
-          name: "FOOD",
-          phone: "",
-          startTime: null,
-          endTime: null,
-          duration: null,
-          orderedItems: [],
-          totalAmount: 0,
-          isClosed: false,
-          cashAmount: 0,
-          onlineAmount: 0,
-        };
-        tables.push(foodTable);
-      }
+      // If there's a payment, store it in a separate "payments" collection
+      if (totalPayment > 0) {
+        const paymentRef = doc(collection(db, "payments")); // Auto-generate a unique ID for the payment
+        await setDoc(paymentRef, {
+          customerId: editCustomerData.id,
+          customerName: editCustomerData.name,
+          location: selectedLocation,
+          date: selectedDate, // Store the date of the payment
+          cashAmount: cashPaymentAmount,
+          onlineAmount: onlinePaymentAmount,
+          totalAmount: totalPayment,
+          timestamp: new Date().toISOString(), // Optional: Add a timestamp for sorting
+        });
 
-      foodTable.cashAmount = (foodTable.cashAmount || 0) + cashPaymentAmount;
-      foodTable.onlineAmount =
-        (foodTable.onlineAmount || 0) + onlinePaymentAmount;
-      foodTable.totalAmount = (foodTable.totalAmount || 0) + totalPayment;
+        // Update the balanceReceived for the sales report
+        setBalanceReceived((prev) => prev + totalPayment);
 
-      await saveTables(selectedDate, tables, selectedLocation);
-
-      if (reportType === "daily") {
-        setActiveTables(tables);
+        // Optionally, if you want to trigger a full refresh of sales data
         await fetchSalesData();
       }
-    }
 
-    setIsEditCustomerModalOpen(false);
-    editCustomerForm.resetFields();
+      setIsEditCustomerModalOpen(false);
+      editCustomerForm.resetFields();
+    } catch (error) {
+      console.error("Error updating customer dues:", error);
+    }
   };
 
   const handleShowCustomerTables = async (customer) => {
@@ -695,11 +711,18 @@ const SalesReport = ({
         <div style={{ display: "flex", gap: "10px" }}>
           <Button
             type="primary"
-            onClick={() =>
-              isAuthenticated
-                ? handleEditCustomer(record)
-                : setDropdownActionCustomer(record) && setIsDropdownOpen(true)
-            }
+            onClick={() => {
+              console.log(
+                "Edit button clicked, isAuthenticated:",
+                isAuthenticated
+              ); // Debug
+              if (isAuthenticated) {
+                handleEditCustomer(record);
+              } else {
+                setDropdownActionCustomer(record);
+                setIsDropdownOpen(true);
+              }
+            }}
           >
             Edit
           </Button>
