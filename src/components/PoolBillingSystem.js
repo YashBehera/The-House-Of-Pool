@@ -982,8 +982,6 @@ const PoolBillingSystem = ({
       });
     }
 
-
-
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
     pendingUpdates.current[`timeout-${key}`] = setTimeout(() => {
       processPendingUpdates(id, item, clickId);
@@ -2020,26 +2018,57 @@ const PoolBillingSystem = ({
           dataSource={sortedTables}
           rowKey="id"
           columns={[
-            { title: "Table No.", dataIndex: "table", key: "table" },
-            { title: "Name", dataIndex: "name", key: "name" },
-            { title: "Mobile Number", dataIndex: "phone", key: "phone" },
+            {
+              title: "Table No.",
+              dataIndex: "table",
+              key: "table",
+              render: (table) => (
+                <span style={{ whiteSpace: "nowrap" }}>{table}</span>
+              ),
+            },
+            {
+              title: "Name",
+              dataIndex: "name",
+              key: "name",
+              render: (name) => (
+                <span style={{ whiteSpace: "nowrap" }}>{name}</span>
+              ),
+            },
+            {
+              title: "Mobile Number",
+              dataIndex: "phone",
+              key: "phone",
+              render: (phone) => (
+                <span style={{ whiteSpace: "nowrap" }}>{phone}</span>
+              ),
+            },
             {
               title: "Start Time",
               dataIndex: "startTime",
               key: "startTime",
-              render: (t) => (t ? moment(t).format("hh:mm A") : "—"),
+              render: (t) => (
+                <span style={{ whiteSpace: "nowrap" }}>
+                  {t ? moment(t).format("hh:mm A") : "—"}
+                </span>
+              ),
             },
             {
               title: "End Time",
               dataIndex: "endTime",
               key: "endTime",
-              render: (t) => (t ? moment(t).format("hh:mm A") : "—"),
+              render: (t) => (
+                <span style={{ whiteSpace: "nowrap" }}>
+                  {t ? moment(t).format("hh:mm A") : "—"}
+                </span>
+              ),
             },
             {
               title: "Duration",
               dataIndex: "durationString",
               key: "duration",
-              render: (d) => d || "—",
+              render: (d) => (
+                <span style={{ whiteSpace: "nowrap" }}>{d || "—"}</span>
+              ),
             },
             {
               title: "Ordered Items",
