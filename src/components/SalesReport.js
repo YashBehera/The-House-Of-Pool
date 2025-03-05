@@ -158,34 +158,6 @@ const SalesReport = ({
           "dailySalesReports",
           `${selectedLocation}_${selectedDate}`
         );
-        const reportSnap = await getDoc(reportDocRef);
-
-        const foodRow = tables.find((entry) => entry.name === "FOOD");
-        const nonFoodTablesRevenue = tables.reduce((acc, entry) => {
-          const { totalAmount, paymentOption, isClosed, gameType } = entry;
-          if (
-            !isClosed ||
-            paymentOption !== "Paid" ||
-            totalAmount === undefined ||
-            gameType === "FOOD"
-          )
-            return acc;
-          return acc + Number(totalAmount);
-        }, 0);
-
-        const foodItemsRevenue = foodRow
-          ? foodRow.orderedItems.reduce(
-              (sum, item) => sum + (ITEM_PRICES[item] || 0),
-              0
-            )
-          : 0;
-        const foodPaymentsRevenue = foodRow
-          ? (foodRow.cashAmount || 0) + (foodRow.onlineAmount || 0)
-          : 0;
-        const foodTotalRevenue =
-          foodRow && foodRow.isClosed && foodRow.paymentOption === "Paid"
-            ? Number(foodRow.totalAmount || 0) + foodPaymentsRevenue
-            : foodItemsRevenue + foodPaymentsRevenue;
 
         // Fetch payments for the selected date and location
         const paymentsQuery = query(
@@ -209,8 +181,6 @@ const SalesReport = ({
           0
         );
 
-        totalRevenue =
-          nonFoodTablesRevenue + foodTotalRevenue + paymentTotalRevenue;
         cashRevenue =
           tables.reduce(
             (sum, entry) => sum + (Number(entry.cashAmount) || 0),
@@ -221,7 +191,9 @@ const SalesReport = ({
             (sum, entry) => sum + (Number(entry.onlineAmount) || 0),
             0
           ) + paymentOnlineRevenue;
-        balanceReceived = foodPaymentsRevenue + paymentTotalRevenue;
+        balanceReceived = paymentTotalRevenue;
+
+        totalRevenue =cashRevenue+onlineRevenue;
 
         salesByGameType = tables.reduce((acc, entry) => {
           const { gameType, totalAmount, paymentOption, orderedItems } = entry;
@@ -516,21 +488,28 @@ const SalesReport = ({
         });
 
         // Update daily sales report
-        const reportDocRef = doc(db, "dailySalesReports", `${selectedLocation}_${selectedDate}`);
+        const reportDocRef = doc(
+          db,
+          "dailySalesReports",
+          `${selectedLocation}_${selectedDate}`
+        );
         const reportSnap = await getDoc(reportDocRef);
-        const existingData = reportSnap.exists() ? reportSnap.data() : {
-          totalRevenue: 0,
-          cashRevenue: 0,
-          onlineRevenue: 0,
-          balanceReceived: 0,
-          salesByGameType: {},
-          salesByItems: {},
-        };
+        const existingData = reportSnap.exists()
+          ? reportSnap.data()
+          : {
+              totalRevenue: 0,
+              cashRevenue: 0,
+              onlineRevenue: 0,
+              balanceReceived: 0,
+              salesByGameType: {},
+              salesByItems: {},
+            };
 
         const updatedReportData = {
           totalRevenue: (existingData.totalRevenue || 0) + totalPayment,
           cashRevenue: (existingData.cashRevenue || 0) + cashPaymentAmount,
-          onlineRevenue: (existingData.onlineRevenue || 0) + onlinePaymentAmount,
+          onlineRevenue:
+            (existingData.onlineRevenue || 0) + onlinePaymentAmount,
           balanceReceived: (existingData.balanceReceived || 0) + totalPayment,
           salesByGameType: existingData.salesByGameType || {},
           salesByItems: existingData.salesByItems || {},
