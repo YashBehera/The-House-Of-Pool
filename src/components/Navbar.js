@@ -30,14 +30,15 @@ const Navbar = ({
         }
       : null
   );
-  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false); // Existing dropdown
-  const [isActionDropdownOpen, setIsActionDropdownOpen] = useState(false); // New dropdown
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [isActionLoginOpen, setIsActionLoginOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [dropdownAction, setDropdownAction] = useState(null);
-  const [pendingLocation, setPendingLocation] = useState(null); // Store intended location
-  const [userRole, setUserRole] = useState(null); // Track user access level
-  const profileDropdownRef = useRef(null); // Ref for existing dropdown
-  const actionDropdownRef = useRef(null); // Ref for new dropdown
+  const [pendingLocation, setPendingLocation] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  const [isActionAuthenticated, setIsActionAuthenticated] = useState(false);
+  const profileDropdownRef = useRef(null);
+  const actionDropdownRef = useRef(null);
   const menuRef = useRef(null);
   const [loginForm] = Form.useForm();
 
@@ -58,13 +59,22 @@ const Navbar = ({
               firstName: user.displayName || "User",
             });
           }
-          // Set user role based on email
+          // Set user role and default location based on email
           if (user.email === "hop@gmail.com") {
             setUserRole("full");
-          } else if (user.email === "staff@gmail.com") {
+            setIsActionAuthenticated(true);
+            // No default location change for full access; let user choose
+          } else if (user.email === "staff1@gmail.com") {
             setUserRole("restricted");
+            setIsActionAuthenticated(false);
+            setSelectedLocation("Old House Of Pool"); // Default to Old House
+          } else if (user.email === "staff2@gmail.com") {
+            setUserRole("restricted");
+            setIsActionAuthenticated(false);
+            setSelectedLocation("New House Of Pool"); // Default to New House
           } else {
             setUserRole("unknown");
+            setIsActionAuthenticated(false);
           }
           setIsProfileDropdownOpen(false);
         } catch (error) {
@@ -74,16 +84,18 @@ const Navbar = ({
             firstName: user.displayName || "User",
           });
           setUserRole("unknown");
+          setIsActionAuthenticated(false);
           setIsProfileDropdownOpen(false);
         }
       } else {
         setUserDetails(null);
         setUserRole(null);
+        setIsActionAuthenticated(false);
         setIsProfileDropdownOpen(true);
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [setSelectedLocation]); // Added dependency to update location
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -96,41 +108,31 @@ const Navbar = ({
       const isOutsideMenu =
         menuRef.current && !menuRef.current.contains(event.target);
 
-      // Close profile dropdown only if authenticated and clicking outside
       if (isOutsideProfileDropdown && userDetails) {
         setIsProfileDropdownOpen(false);
       }
-
-      // Always close action dropdown and menu when clicking outside
       if (isOutsideActionDropdown) {
-        setIsActionDropdownOpen(false);
+        setIsActionLoginOpen(false);
       }
       if (isOutsideMenu) {
         setIsMenuOpen(false);
       }
     };
 
-    if (isProfileDropdownOpen || isActionDropdownOpen || isMenuOpen) {
+    if (isProfileDropdownOpen || isActionLoginOpen || isMenuOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isProfileDropdownOpen, isActionDropdownOpen, isMenuOpen, userDetails]);
+  }, [isProfileDropdownOpen, isActionLoginOpen, isMenuOpen, userDetails]);
 
   const toggleProfileDropdown = () => setIsProfileDropdownOpen((prev) => !prev);
   const toggleMenu = () => setIsMenuOpen((prev) => !prev);
 
-  const showActionDropdown = (action, value = null) => {
-    setDropdownAction(action);
-    if (action === "location" && value) {
-      setPendingLocation(value);
-    }
-    setIsActionDropdownOpen(true);
-  };
-
   const handleRestrictedAction = (action) => {
     if (!userRole) {
-      alert("You do not have permission to access this feature.");
-    } else if (userRole === "full") {
+      alert("You need to log in to access this feature.");
+      setIsProfileDropdownOpen(true);
+    } else if (userRole === "full" || isActionAuthenticated) {
       switch (action) {
         case "inventory":
           navigate("/inventory");
@@ -141,28 +143,71 @@ const Navbar = ({
         case "expenses":
           navigate("/expenses");
           break;
-
         default:
           break;
       }
-    } else {
-      alert("You do not have permission to access this feature.");
+    } else if (userRole === "restricted") {
+      setDropdownAction(action);
+      setIsActionLoginOpen(true);
     }
   };
 
   const handleSelectClick = () => {
-    if (userRole === "restricted") {
-      alert("You do not have permission to access this feature.");
+    if (userRole === "restricted" && !isActionAuthenticated) {
+      setDropdownAction("location");
+      setIsActionLoginOpen(true);
     }
   };
 
   const handleLocationChange = (value) => {
     if (!userRole) {
-      alert("You do not have permission to access this feature.");
-    } else if (userRole === "full") {
+      alert("You need to log in to access this feature.");
+      setIsProfileDropdownOpen(true);
+    } else if (userRole === "full" || isActionAuthenticated) {
       setSelectedLocation(value);
+      if (userRole === "restricted") {
+        setIsActionAuthenticated(false);
+      }
+    } else if (userRole === "restricted") {
+      setPendingLocation(value);
+      setDropdownAction("location");
+      setIsActionLoginOpen(true);
+    }
+  };
+
+  const handleActionLoginSubmit = async (values) => {
+    const { email, password } = values;
+    if (email === "hop@gmail.com" && password === "123456") {
+      // Replace with actual admin password
+      setIsActionAuthenticated(true);
+      switch (dropdownAction) {
+        case "inventory":
+          navigate("/inventory");
+          break;
+        case "reports":
+          navigate("/reports");
+          break;
+        case "expenses":
+          navigate("/expenses");
+          break;
+        case "location":
+          if (pendingLocation) {
+            setSelectedLocation(pendingLocation);
+            setPendingLocation(null);
+            if (userRole === "restricted") {
+              setIsActionAuthenticated(false);
+            }
+          }
+          break;
+        default:
+          break;
+      }
+      setIsActionLoginOpen(false);
+      loginForm.resetFields();
     } else {
-      // For restricted or unknown, alert is handled by onClick
+      alert(
+        "Invalid credentials for this action. Please use admin credentials."
+      );
     }
   };
 
@@ -228,11 +273,11 @@ const Navbar = ({
         >
           <span className="text-white">Waiting Queue</span>
         </Button>
-        {userRole !== "restricted" ? (
+        {userRole !== "restricted" || isActionAuthenticated ? (
           <Select
             value={selectedLocation}
-            onClick={handleSelectClick} // Show alert for restricted users (though not triggered here)
-            onChange={handleLocationChange} // Handle selection for full access
+            onClick={handleSelectClick}
+            onChange={handleLocationChange}
             className="w-40 md:w-44"
           >
             <Option value="Old House Of Pool">Old House Of Pool</Option>
@@ -293,7 +338,7 @@ const Navbar = ({
         </div>
       </div>
 
-      {/* Mobile Calendar (below navbar) */}
+      {/* Mobile Calendar */}
       <div className="md:hidden absolute top-12 right-4 flex items-center gap-2 bg-[#001529] p-2">
         <h2 className="text-white text-sm font-bold">📅 Date</h2>
         <input
@@ -304,7 +349,7 @@ const Navbar = ({
         />
       </div>
 
-      {/* Existing Dropdown (Profile/Login) */}
+      {/* Existing Profile/Login Dropdown */}
       {isProfileDropdownOpen && (
         <>
           <div className="fixed inset-0 bg-black opacity-50 z-20" />
@@ -326,6 +371,69 @@ const Navbar = ({
             </div>
             <div className="w-full md:w-full text-black p-4 flex flex-col items-center justify-center">
               {userDetails ? <Profile userDetails={userDetails} /> : <Login />}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* New Action Login Dropdown */}
+      {isActionLoginOpen && (
+        <>
+          <div className="overlay fixed top-0 left-0 w-full h-full bg-zinc-900 opacity-50 z-10"></div>
+          <div
+            ref={actionDropdownRef}
+            className="dropdown-menu fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-11/12 max-w-[40rem] h-[26rem] bg-white shadow-2xl rounded-3xl p-2 z-30 flex flex-row md:flex-row items-center gap-2 animate-fade-in"
+          >
+            <div>
+              <img
+                src={logo1}
+                className="h-[12.5rem] w-[30rem] rounded-t-3xl"
+                alt="Logo 1"
+              />
+              <img
+                src={logo2}
+                className="h-[12.5rem] w-[30rem] rounded-b-3xl"
+                alt="Logo 2"
+              />
+            </div>
+            <div className="bg-gray-100 h-[25rem] w-[30rem] text-black rounded-3xl shadow-xl shadow-gray-400 p-5">
+              <div className="flex mt-1 ml-10 w-60 flex-col items-center justify-center">
+                <span className="text-3xl font-bold text-black text-center relative bottom-4">
+                  The House Of Pool
+                </span>
+                <h3>Login to Access {dropdownAction}</h3>
+              </div>
+              <div>
+                <Form
+                  form={loginForm}
+                  onFinish={handleActionLoginSubmit}
+                  className="flex flex-col items-center justify-center"
+                >
+                  <Form.Item
+                    name="email"
+                    label="Email"
+                    rules={[
+                      { required: true, message: "Please enter your email" },
+                    ]}
+                  >
+                    <Input type="email" />
+                  </Form.Item>
+                  <Form.Item
+                    name="password"
+                    label="Password"
+                    rules={[
+                      { required: true, message: "Please enter your password" },
+                    ]}
+                  >
+                    <Input.Password />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit">
+                      Login
+                    </Button>
+                  </Form.Item>
+                </Form>
+              </div>
             </div>
           </div>
         </>
