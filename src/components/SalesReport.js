@@ -25,6 +25,8 @@ import {
   setDoc,
   updateDoc,
   where,
+  addDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import moment from "moment";
 import React, { useEffect, useRef, useState } from "react";
@@ -33,6 +35,7 @@ import logo1 from "./HOP3.png";
 import logo2 from "./HOP5.png";
 import Navbar from "./Navbar";
 import { getItemPrices } from "./PoolBillingSystem";
+import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
 const { Title } = Typography;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
@@ -69,6 +72,38 @@ const SalesReport = ({
   const [cashRevenue, setCashRevenue] = useState(0);
   const [onlineRevenue, setOnlineRevenue] = useState(0);
   const [balanceReceived, setBalanceReceived] = useState(0);
+  const [expenses, setExpenses] = useState([]);
+  const [isAddExpenseModalOpen, setIsAddExpenseModalOpen] = useState(false);
+  const [isEditExpenseModalOpen, setIsEditExpenseModalOpen] = useState(false);
+  const [isDeleteExpenseModalOpen, setIsDeleteExpenseModalOpen] =
+    useState(false);
+  const [editExpenseRecord, setEditExpenseRecord] = useState(null);
+  const [deleteExpenseRecord, setDeleteExpenseRecord] = useState(null);
+  const [expenseForm] = Form.useForm();
+  const [editExpenseForm] = Form.useForm();
+
+  useEffect(() => {
+    const fetchExpenses = async () => {
+      setLoading(true);
+      try {
+        const expensesCollection = collection(db, "expenses");
+        const snapshot = await getDocs(expensesCollection);
+        const fetchedExpenses = snapshot.docs
+          .map((doc) => ({
+            key: doc.id,
+            ...doc.data(),
+          }))
+          .filter((expense) => expense.location === selectedLocation);
+        setExpenses(fetchedExpenses);
+      } catch (error) {
+        console.error("Error fetching expenses:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchExpenses();
+  }, [selectedLocation]);
 
   useEffect(() => {
     const fetchPrices = async () => {
@@ -193,7 +228,7 @@ const SalesReport = ({
           ) + paymentOnlineRevenue;
         balanceReceived = paymentTotalRevenue;
 
-        totalRevenue =cashRevenue+onlineRevenue;
+        totalRevenue = cashRevenue + onlineRevenue;
 
         salesByGameType = tables.reduce((acc, entry) => {
           const { gameType, totalAmount, paymentOption, orderedItems } = entry;
@@ -667,6 +702,121 @@ const SalesReport = ({
     0
   );
 
+  const handleAddExpense = async (values) => {
+    const newExpense = {
+      expense: values.expense,
+      amount: parseFloat(values.amount),
+      location: selectedLocation,
+    };
+
+    try {
+      const docRef = await addDoc(collection(db, "expenses"), newExpense);
+      setExpenses([...expenses, { key: docRef.id, ...newExpense }]);
+      expenseForm.resetFields();
+      setIsAddExpenseModalOpen(false);
+    } catch (error) {
+      console.error("Error adding expense:", error);
+      alert("Failed to add expense: " + error.message);
+    }
+  };
+
+  // Handle editing an expense
+  const handleEditExpense = (record) => {
+    setEditExpenseRecord(record);
+    setIsEditExpenseModalOpen(true);
+    editExpenseForm.setFieldsValue({
+      expense: record.expense,
+      amount: record.amount,
+    });
+  };
+
+  const handleUpdateExpense = async (values) => {
+    const updatedExpense = {
+      expense: values.expense,
+      amount: parseFloat(values.amount),
+      location: selectedLocation,
+    };
+
+    try {
+      const expenseDocRef = doc(db, "expenses", editExpenseRecord.key);
+      await updateDoc(expenseDocRef, updatedExpense);
+      const updatedExpenses = expenses.map((item) =>
+        item.key === editExpenseRecord.key
+          ? { ...item, ...updatedExpense }
+          : item
+      );
+      setExpenses(updatedExpenses);
+      setIsEditExpenseModalOpen(false);
+      setEditExpenseRecord(null);
+      editExpenseForm.resetFields();
+    } catch (error) {
+      console.error("Error updating expense:", error);
+      alert("Failed to update expense: " + error.message);
+    }
+  };
+
+  // Handle deleting an expense
+  const handleDeleteExpense = (record) => {
+    setDeleteExpenseRecord(record);
+    setIsDeleteExpenseModalOpen(true);
+  };
+
+  const confirmDeleteExpense = async () => {
+    if (!deleteExpenseRecord) return;
+    try {
+      const expenseDocRef = doc(db, "expenses", deleteExpenseRecord.key);
+      await deleteDoc(expenseDocRef);
+      setExpenses(
+        expenses.filter((item) => item.key !== deleteExpenseRecord.key)
+      );
+    } catch (error) {
+      console.error("Error deleting expense:", error);
+      alert("Failed to delete expense: " + error.message);
+    } finally {
+      setIsDeleteExpenseModalOpen(false);
+      setDeleteExpenseRecord(null);
+    }
+  };
+
+  // Expenses table columns
+  const expenseColumns = [
+    {
+      title: "Expense",
+      dataIndex: "expense",
+      key: "expense",
+      sorter: (a, b) => a.expense.localeCompare(b.expense),
+    },
+    {
+      title: "Amount",
+      dataIndex: "amount",
+      key: "amount",
+      sorter: (a, b) => a.amount - b.amount,
+      render: (amount) => `Rs ${amount.toFixed(2)}`,
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_, record) => (
+        <div style={{ display: "flex", gap: "10px" }}>
+          <Button
+            type="primary"
+            icon={<EditOutlined />}
+            onClick={() => handleEditExpense(record)}
+          >
+            Edit
+          </Button>
+          <Button
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => handleDeleteExpense(record)}
+          >
+            Delete
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   const gameColumns = [
     {
       title: "Game Type 🎱",
@@ -1027,6 +1177,123 @@ const SalesReport = ({
               pagination={{ pageSize: 5 }}
               style={{ borderRadius: "8px", overflow: "hidden" }}
             />
+
+            <Title level={4} style={{ marginTop: "20px", color: "#ff4d4f" }}>
+              💸 Expenses
+            </Title>
+            <Button
+              type="primary"
+              onClick={() => setIsAddExpenseModalOpen(true)}
+              style={{ marginBottom: "15px" }}
+            >
+              Add Expense
+            </Button>
+            <Table
+              dataSource={expenses}
+              columns={expenseColumns}
+              bordered
+              pagination={{ pageSize: 5 }}
+              style={{ borderRadius: "8px", overflow: "hidden" }}
+            />
+
+            {/* Add Expense Modal */}
+            <Modal
+              title="Add New Expense"
+              open={isAddExpenseModalOpen}
+              onCancel={() => setIsAddExpenseModalOpen(false)}
+              footer={null}
+            >
+              <Form
+                form={expenseForm}
+                onFinish={handleAddExpense}
+                layout="vertical"
+              >
+                <Form.Item
+                  name="expense"
+                  label="Expense"
+                  rules={[
+                    {
+                      required: true,
+                      message: "Please enter the expense name",
+                    },
+                  ]}
+                >
+                  <Input placeholder="Enter expense name" />
+                </Form.Item>
+                <Form.Item
+                  name="amount"
+                  label="Amount"
+                  rules={[
+                    { required: true, message: "Please enter the amount" },
+                  ]}
+                >
+                  <Input type="number" min="0" placeholder="Enter amount" />
+                </Form.Item>
+                <Form.Item>
+                  <Button type="primary" htmlType="submit" disabled={loading}>
+                    Add
+                  </Button>
+                </Form.Item>
+              </Form>
+            </Modal>
+
+            {/* Edit Expense Modal */}
+            <Modal
+              title="Edit Expense"
+              open={isEditExpenseModalOpen}
+              onCancel={() => setIsEditExpenseModalOpen(false)}
+              footer={null}
+            >
+              <Form
+                form={editExpenseForm}
+                onFinish={handleUpdateExpense}
+                layout="vertical"
+              >
+                <Form.Item
+                  name="expense"
+                  label="Expense"
+                  rules={[
+                    {
+                      required: true,
+                      message: "Please enter the expense name",
+                    },
+                  ]}
+                >
+                  <Input placeholder="Enter expense name" />
+                </Form.Item>
+                <Form.Item
+                  name="amount"
+                  label="Amount"
+                  rules={[
+                    { required: true, message: "Please enter the amount" },
+                  ]}
+                >
+                  <Input type="number" min="0" placeholder="Enter amount" />
+                </Form.Item>
+                <Form.Item>
+                  <Button type="primary" htmlType="submit" disabled={loading}>
+                    Update
+                  </Button>
+                </Form.Item>
+              </Form>
+            </Modal>
+
+            {/* Delete Expense Confirmation Modal */}
+            <Modal
+              title="Confirm Deletion"
+              open={isDeleteExpenseModalOpen}
+              onOk={confirmDeleteExpense}
+              onCancel={() => setIsDeleteExpenseModalOpen(false)}
+              okText="Yes"
+              okButtonProps={{ danger: true }}
+              cancelText="No"
+            >
+              <p>
+                Are you sure you want to delete the expense "
+                {deleteExpenseRecord?.expense}" of Rs{" "}
+                {deleteExpenseRecord?.amount.toFixed(2)}?
+              </p>
+            </Modal>
           </>
         )}
 
