@@ -160,10 +160,7 @@ const SalesReport = ({
         );
         const reportSnap = await getDoc(reportDocRef);
 
-        // Always recalculate totals based on latest tables data
         const foodRow = tables.find((entry) => entry.name === "FOOD");
-        console.log("Food Row:", foodRow);
-
         const nonFoodTablesRevenue = tables.reduce((acc, entry) => {
           const { totalAmount, paymentOption, isClosed, gameType } = entry;
           if (
@@ -175,7 +172,6 @@ const SalesReport = ({
             return acc;
           return acc + Number(totalAmount);
         }, 0);
-        console.log("Non-Food Tables Revenue:", nonFoodTablesRevenue);
 
         const foodItemsRevenue = foodRow
           ? foodRow.orderedItems.reduce(
@@ -183,31 +179,49 @@ const SalesReport = ({
               0
             )
           : 0;
-        console.log("Food Items Revenue:", foodItemsRevenue);
-
         const foodPaymentsRevenue = foodRow
           ? (foodRow.cashAmount || 0) + (foodRow.onlineAmount || 0)
           : 0;
-        console.log("Food Payments Revenue:", foodPaymentsRevenue);
-
         const foodTotalRevenue =
           foodRow && foodRow.isClosed && foodRow.paymentOption === "Paid"
             ? Number(foodRow.totalAmount || 0) + foodPaymentsRevenue
             : foodItemsRevenue + foodPaymentsRevenue;
-        console.log("Food Total Revenue:", foodTotalRevenue);
 
-        totalRevenue = nonFoodTablesRevenue + foodTotalRevenue;
-        console.log("Calculated Total Revenue:", totalRevenue);
+        // Fetch payments for the selected date and location
+        const paymentsQuery = query(
+          collection(db, "payments"),
+          where("location", "==", selectedLocation),
+          where("date", "==", selectedDate)
+        );
+        const paymentsSnap = await getDocs(paymentsQuery);
+        const payments = paymentsSnap.docs.map((doc) => doc.data());
 
-        cashRevenue = tables.reduce(
-          (sum, entry) => sum + (Number(entry.cashAmount) || 0),
+        const paymentCashRevenue = payments.reduce(
+          (sum, payment) => sum + (payment.cashAmount || 0),
           0
         );
-        onlineRevenue = tables.reduce(
-          (sum, entry) => sum + (Number(entry.onlineAmount) || 0),
+        const paymentOnlineRevenue = payments.reduce(
+          (sum, payment) => sum + (payment.onlineAmount || 0),
           0
         );
-        balanceReceived = foodPaymentsRevenue;
+        const paymentTotalRevenue = payments.reduce(
+          (sum, payment) => sum + (payment.totalAmount || 0),
+          0
+        );
+
+        totalRevenue =
+          nonFoodTablesRevenue + foodTotalRevenue + paymentTotalRevenue;
+        cashRevenue =
+          tables.reduce(
+            (sum, entry) => sum + (Number(entry.cashAmount) || 0),
+            0
+          ) + paymentCashRevenue;
+        onlineRevenue =
+          tables.reduce(
+            (sum, entry) => sum + (Number(entry.onlineAmount) || 0),
+            0
+          ) + paymentOnlineRevenue;
+        balanceReceived = foodPaymentsRevenue + paymentTotalRevenue;
 
         salesByGameType = tables.reduce((acc, entry) => {
           const { gameType, totalAmount, paymentOption, orderedItems } = entry;
@@ -236,8 +250,6 @@ const SalesReport = ({
           return acc;
         }, {});
 
-        // Merge existing Firestore data with new calculations
-        const existingData = reportSnap.exists() ? reportSnap.data() : {};
         const updatedReportData = {
           totalRevenue,
           cashRevenue,
@@ -250,7 +262,6 @@ const SalesReport = ({
         console.log("Saving to Firestore:", updatedReportData);
         await setDoc(reportDocRef, updatedReportData, { merge: true });
 
-        // Update state
         setTotalRevenue(totalRevenue);
         setCashRevenue(cashRevenue);
         setOnlineRevenue(onlineRevenue);
@@ -487,28 +498,51 @@ const SalesReport = ({
     const newDues = Math.max(0, currentDues - totalPayment);
 
     try {
-      // Update the customer's dues in the regularCustomers collection
+      // Update customer dues
       await updateDoc(customerRef, { dues: newDues });
 
-      // If there's a payment, store it in a separate "payments" collection
       if (totalPayment > 0) {
-        const paymentRef = doc(collection(db, "payments")); // Auto-generate a unique ID for the payment
+        // Store payment in the "payments" collection
+        const paymentRef = doc(collection(db, "payments"));
         await setDoc(paymentRef, {
           customerId: editCustomerData.id,
           customerName: editCustomerData.name,
           location: selectedLocation,
-          date: selectedDate, // Store the date of the payment
+          date: selectedDate,
           cashAmount: cashPaymentAmount,
           onlineAmount: onlinePaymentAmount,
           totalAmount: totalPayment,
-          timestamp: new Date().toISOString(), // Optional: Add a timestamp for sorting
+          timestamp: new Date().toISOString(),
         });
 
-        // Update the balanceReceived for the sales report
-        setBalanceReceived((prev) => prev + totalPayment);
+        // Update daily sales report
+        const reportDocRef = doc(db, "dailySalesReports", `${selectedLocation}_${selectedDate}`);
+        const reportSnap = await getDoc(reportDocRef);
+        const existingData = reportSnap.exists() ? reportSnap.data() : {
+          totalRevenue: 0,
+          cashRevenue: 0,
+          onlineRevenue: 0,
+          balanceReceived: 0,
+          salesByGameType: {},
+          salesByItems: {},
+        };
 
-        // Optionally, if you want to trigger a full refresh of sales data
-        await fetchSalesData();
+        const updatedReportData = {
+          totalRevenue: (existingData.totalRevenue || 0) + totalPayment,
+          cashRevenue: (existingData.cashRevenue || 0) + cashPaymentAmount,
+          onlineRevenue: (existingData.onlineRevenue || 0) + onlinePaymentAmount,
+          balanceReceived: (existingData.balanceReceived || 0) + totalPayment,
+          salesByGameType: existingData.salesByGameType || {},
+          salesByItems: existingData.salesByItems || {},
+          lastUpdated: new Date().toISOString(),
+        };
+        await setDoc(reportDocRef, updatedReportData, { merge: true });
+
+        // Update state directly
+        setTotalRevenue((prev) => prev + totalPayment);
+        setCashRevenue((prev) => prev + cashPaymentAmount);
+        setOnlineRevenue((prev) => prev + onlinePaymentAmount);
+        setBalanceReceived((prev) => prev + totalPayment);
       }
 
       setIsEditCustomerModalOpen(false);
@@ -644,6 +678,15 @@ const SalesReport = ({
       .filter((table) => table.paymentOption === customerName && table.dues > 0)
       .reduce((sum, table) => sum + (table.dues || 0), 0);
   };
+
+  const totalGameSales = filteredGames.reduce(
+    (sum, game) => sum + game.totalSales,
+    0
+  );
+  const totalItemSales = filteredItems.reduce(
+    (sum, item) => sum + item.totalRevenue,
+    0
+  );
 
   const gameColumns = [
     {
@@ -961,6 +1004,16 @@ const SalesReport = ({
                 borderRadius: "8px",
                 overflow: "hidden",
               }}
+              summary={() => (
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0}>
+                    <strong>Total</strong>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={1}>
+                    <strong>Rs {totalGameSales.toFixed(2)}</strong>
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              )}
             />
 
             <Title level={4} style={{ marginTop: "20px", color: "#52c41a" }}>
@@ -972,6 +1025,17 @@ const SalesReport = ({
               bordered
               pagination={{ pageSize: 5 }}
               style={{ borderRadius: "8px", overflow: "hidden" }}
+              summary={() => (
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0}>
+                    <strong>Total</strong>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={1}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={2}>
+                    <strong>Rs {totalItemSales.toFixed(2)}</strong>
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              )}
             />
 
             <Title level={4} style={{ marginTop: "20px", color: "#fa8c16" }}>
