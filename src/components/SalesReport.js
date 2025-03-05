@@ -840,11 +840,11 @@ const SalesReport = ({
         </Title>
 
         <Row gutter={16} style={{ marginBottom: 20 }}>
-          <Col span={12}>
+          <Col span={3}>
             <Select
               value={reportType}
               onChange={setReportType}
-              style={{ width: "100%" }}
+              className="w-36"
             >
               <Option value="daily">Daily</Option>
               <Option value="custom">Custom</Option>
@@ -856,7 +856,6 @@ const SalesReport = ({
                 onChange={(dates) =>
                   setDateRange(dates ? dates.map((d) => d.toDate()) : [])
                 }
-                style={{ width: "100%" }}
               />
             </Col>
           )}
