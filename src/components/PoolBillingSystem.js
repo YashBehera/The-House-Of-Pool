@@ -66,6 +66,14 @@ const OLD_HOUSE_POOL_RATES = {
   "Table 12": 150,
 };
 
+const getTableSize = (table) => {
+  const price = OLD_HOUSE_POOL_RATES[table] || 0;
+  if (price === 150) return "Small";
+  if (price === 200) return "Medium";
+  if (price === 250) return "Large";
+  return ""; // Default if price isn’t matched (shouldn’t happen with your data)
+};
+
 const NEW_HOUSE_CONFIG = {
   tables: Array.from({ length: 5 }, (_, i) => `Table ${i + 1}`),
   ps: [],
@@ -581,11 +589,6 @@ const PoolBillingSystem = ({
     return docSnap.exists() ? docSnap.data().data : {};
   };
 
-  const canOrderItem = async (item) => {
-    const stock = await getInventory();
-    return stock[item]?.available > 0;
-  };
-
   const calculateTotalAmount = (table, endTime) => {
     const startTime = new Date(table.startTime);
     const effectiveEndTime = endTime
@@ -614,7 +617,7 @@ const PoolBillingSystem = ({
 
     if (table.gameType === "Turf") {
       totalAmount += Math.round((totalMinutes / 60) * TURF_RATE_PER_HOUR);
-    } else if (table.gameType === "8-ball Pool") {
+    } else if (table.gameType === "Snooker Table") {
       if (table.location === LOCATIONS.OLD_HOUSE) {
         const hourlyRate = OLD_HOUSE_POOL_RATES[table.table] || 0;
         totalAmount += Math.round((totalMinutes / 60) * hourlyRate);
@@ -641,8 +644,8 @@ const PoolBillingSystem = ({
     if (typeof selectedTable === "string") {
       const lowerTable = selectedTable.toLowerCase();
       if (lowerTable.includes("table tennis")) gameType = "Table Tennis";
-      else if (lowerTable.startsWith("table ")) gameType = "8-ball Pool";
-      else if (lowerTable.includes("controller")) gameType = "PS";
+      else if (lowerTable.startsWith("table ")) gameType = "Snooker Table";
+      else if (lowerTable.includes("controller")) gameType = "Play Station";
       else if (lowerTable.includes("turf")) gameType = "Turf";
     } else {
       console.error("Error: selectedTable is not a string", selectedTable);
@@ -800,21 +803,29 @@ const PoolBillingSystem = ({
 
   const getMenu = (id) => {
     const tableData = activeTables.find((t) => t.id === id);
-    if (!tableData)
+    if (!tableData) {
       return (
         <Menu>
           <Menu.Item>No items found</Menu.Item>
         </Menu>
       );
+    }
+
+    // Sort items alphabetically for stable ordering
+    const sortedItems = Object.keys(ITEM_PRICES).sort((a, b) =>
+      a.localeCompare(b)
+    );
 
     return (
       <Menu>
-        {Object.keys(ITEM_PRICES).map((item, index) => {
+        {sortedItems.map((item, index) => {
           const itemCount = tableData.orderedItems
             ? tableData.orderedItems.filter((i) => i === item).length
             : 0;
           return (
-            <Menu.Item key={index}>
+            <Menu.Item key={item}>
+              {" "}
+              {/* Use item name as key for stability */}
               <div
                 style={{
                   display: "flex",
@@ -1160,7 +1171,7 @@ const PoolBillingSystem = ({
 
   const handleLoginSubmit = async (values) => {
     try {
-      await signInWithEmailAndPassword(auth, values.email);
+      await signInWithEmailAndPassword(auth, values.email, values.password);
       if (values.email === "hop@gmail.com") {
         if (dropdownAction === "edit") {
           const record = activeTables.find((t) => t.id === dropdownRecordId);
@@ -1227,6 +1238,8 @@ const PoolBillingSystem = ({
       if (a.isClosed && !b.isClosed) return 1;
       return 0;
     });
+
+  console.log(activeTables);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -1346,7 +1359,7 @@ const PoolBillingSystem = ({
                   }}
                   className=" flex text-4xl font-bold relative top-5"
                 >
-                  8 Ball Pool
+                  Snooker Table
                 </h1>
                 <div
                   style={{
@@ -1408,6 +1421,17 @@ const PoolBillingSystem = ({
                       <h3 style={{ position: "relative", bottom: "80px" }}>
                         {table}
                       </h3>
+                      <p
+                        style={{
+                          position: "relative",
+                          bottom: "70px",
+                          fontSize: "12px",
+                          color: "#666",
+                          margin: 0,
+                        }}
+                      >
+                        {getTableSize(table)}
+                      </p>
                       {sortedTables
                         .filter((t) => t.table === table && !t.isClosed)
                         .map((activeTable) => (
@@ -1488,6 +1512,17 @@ const PoolBillingSystem = ({
                       <h3 style={{ position: "relative", bottom: "80px" }}>
                         {table}
                       </h3>
+                      <p
+                        style={{
+                          position: "relative",
+                          bottom: "70px",
+                          fontSize: "12px",
+                          color: "#666",
+                          margin: 0,
+                        }}
+                      >
+                        {getTableSize(table)}
+                      </p>
                       {sortedTables
                         .filter((t) => t.table === table && !t.isClosed)
                         .map((activeTable) => (
