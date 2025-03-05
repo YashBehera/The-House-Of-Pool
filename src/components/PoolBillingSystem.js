@@ -126,6 +126,10 @@ const PoolBillingSystem = ({
   const [isEditingTurf, setIsEditingTurf] = useState(false);
   const [editingReservationId, setEditingReservationId] = useState(null);
   const [ITEM_PRICES, setITEM_PRICES] = useState({}); // New state for dynamic item prices
+  const [isFoodPaymentModalOpen, setIsFoodPaymentModalOpen] = useState(false);
+  const [foodPaymentForm] = Form.useForm();
+  const [foodTableId, setFoodTableId] = useState(null);
+  const [dropdownItems, setDropdownItems] = useState([]); // New state for dropdown working set
 
   useEffect(() => {
     if (!isAuthenticated || !selectedLocation) return;
@@ -811,21 +815,21 @@ const PoolBillingSystem = ({
       );
     }
 
-    // Sort items alphabetically for stable ordering
     const sortedItems = Object.keys(ITEM_PRICES).sort((a, b) =>
       a.localeCompare(b)
     );
+    const isFoodRow = tableData.name === "FOOD";
 
     return (
       <Menu>
-        {sortedItems.map((item, index) => {
-          const itemCount = tableData.orderedItems
+        {sortedItems.map((item) => {
+          const itemCount = isFoodRow
+            ? dropdownItems.filter((i) => i === item).length
+            : tableData.orderedItems
             ? tableData.orderedItems.filter((i) => i === item).length
             : 0;
           return (
             <Menu.Item key={item}>
-              {" "}
-              {/* Use item name as key for stability */}
               <div
                 style={{
                   display: "flex",
@@ -855,8 +859,63 @@ const PoolBillingSystem = ({
             </Menu.Item>
           );
         })}
+        {isFoodRow && (
+          <Menu.Item key="add-payment">
+            <Button
+              type="primary"
+              style={{ width: "100%" }}
+              onClick={() => {
+                setFoodTableId(id);
+                setIsFoodPaymentModalOpen(true);
+                const totalPayment = dropdownItems.reduce(
+                  (sum, item) => sum + (ITEM_PRICES[item] || 0),
+                  0
+                );
+                foodPaymentForm.setFieldsValue({
+                  cashAmount: 0,
+                  onlineAmount: 0,
+                  totalPayment: totalPayment.toFixed(2),
+                });
+                setActiveDropdownTable(null); // Close dropdown
+              }}
+            >
+              Add Payment
+            </Button>
+          </Menu.Item>
+        )}
       </Menu>
     );
+  };
+
+  const handleFoodPaymentSubmit = (values) => {
+    const cashAmount = parseFloat(values.cashAmount) || 0;
+    const onlineAmount = parseFloat(values.onlineAmount) || 0;
+
+    setActiveTables((prevTables) => {
+      const updatedTables = prevTables.map((table) => {
+        if (table.id === foodTableId) {
+          const totalItemCost = dropdownItems.reduce(
+            (sum, item) => sum + (ITEM_PRICES[item] || 0),
+            0
+          );
+          return {
+            ...table,
+            cashAmount: (table.cashAmount || 0) + cashAmount,
+            onlineAmount: (table.onlineAmount || 0) + onlineAmount,
+            totalAmount: (table.totalAmount || 0) + totalItemCost,
+            orderedItems: [...table.orderedItems, ...dropdownItems], // Append to existing items
+          };
+        }
+        return table;
+      });
+      saveTables(selectedDate, updatedTables, selectedLocation);
+      return updatedTables;
+    });
+
+    setDropdownItems([]); // Reset dropdown count
+    setIsFoodPaymentModalOpen(false);
+    foodPaymentForm.resetFields();
+    setFoodTableId(null);
   };
 
   const updateInventory = async (item, change) => {
@@ -910,13 +969,20 @@ const PoolBillingSystem = ({
       });
     }
 
-    setActiveTables((prevTables) => {
-      const updatedTables = prevTables.map((t) => {
-        if (t.id !== id) return t;
-        return { ...t, orderedItems: [...t.orderedItems, item] };
+    const table = activeTables.find((t) => t.id === id);
+    if (table?.name === "FOOD") {
+      setDropdownItems((prev) => [...prev, item]);
+    } else {
+      setActiveTables((prevTables) => {
+        const updatedTables = prevTables.map((t) => {
+          if (t.id !== id) return t;
+          return { ...t, orderedItems: [...t.orderedItems, item] };
+        });
+        return updatedTables;
       });
-      return updatedTables;
-    });
+    }
+
+
 
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
     pendingUpdates.current[`timeout-${key}`] = setTimeout(() => {
@@ -949,18 +1015,27 @@ const PoolBillingSystem = ({
         };
       });
     }
-
-    setActiveTables((prevTables) => {
-      const updatedTables = prevTables.map((t) => {
-        if (t.id !== id) return t;
-        const updatedItems = [...t.orderedItems];
+    const table = activeTables.find((t) => t.id === id);
+    if (table?.name === "FOOD") {
+      // Only update dropdownItems for FOOD row
+      setDropdownItems((prev) => {
+        const updatedItems = [...prev];
         const index = updatedItems.lastIndexOf(item);
         if (index !== -1) updatedItems.splice(index, 1);
-        return { ...t, orderedItems: updatedItems };
+        return updatedItems;
       });
-      return updatedTables;
-    });
-
+    } else {
+      setActiveTables((prevTables) => {
+        const updatedTables = prevTables.map((t) => {
+          if (t.id !== id) return t;
+          const updatedItems = [...t.orderedItems];
+          const index = updatedItems.lastIndexOf(item);
+          if (index !== -1) updatedItems.splice(index, 1);
+          return { ...t, orderedItems: updatedItems };
+        });
+        return updatedTables;
+      });
+    }
     clearTimeout(pendingUpdates.current[`timeout-${key}`]);
     pendingUpdates.current[`timeout-${key}`] = setTimeout(() => {
       processPendingUpdates(id, item, clickId);
@@ -1440,7 +1515,7 @@ const PoolBillingSystem = ({
                             style={{
                               fontSize: "14px",
                               fontWeight: "bold",
-                              bottom: "160px",
+                              bottom: "180px",
                               position: "relative",
                             }}
                           >
@@ -1531,7 +1606,7 @@ const PoolBillingSystem = ({
                             style={{
                               fontSize: "14px",
                               fontWeight: "bold",
-                              bottom: "160px",
+                              bottom: "180px",
                               position: "relative",
                             }}
                           >
@@ -2293,6 +2368,47 @@ const PoolBillingSystem = ({
             <Form.Item>
               <Button type="primary" htmlType="submit">
                 Save Changes
+              </Button>
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        <Modal
+          title="Add Payment for FOOD Ordered Items"
+          open={isFoodPaymentModalOpen}
+          onCancel={() => {
+            setIsFoodPaymentModalOpen(false);
+            foodPaymentForm.resetFields();
+            setFoodTableId(null);
+          }}
+          footer={null}
+        >
+          <Form form={foodPaymentForm} onFinish={handleFoodPaymentSubmit}>
+            <Form.Item label="Ordered Items">
+              <Input value={aggregateItems(dropdownItems)} disabled />
+            </Form.Item>
+            <Form.Item name="totalPayment" label="Payment Amount (Rs)">
+              <Input disabled />
+            </Form.Item>
+            <Form.Item
+              name="cashAmount"
+              label="Cash Amount (Rs)"
+              rules={[{ required: true, message: "Please enter cash amount" }]}
+            >
+              <Input type="number" min={0} />
+            </Form.Item>
+            <Form.Item
+              name="onlineAmount"
+              label="Online Amount (Rs)"
+              rules={[
+                { required: true, message: "Please enter online amount" },
+              ]}
+            >
+              <Input type="number" min={0} />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit">
+                Save Payment
               </Button>
             </Form.Item>
           </Form>
