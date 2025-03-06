@@ -597,29 +597,31 @@ const SalesReport = ({
   };
 
   const handleShowPaymentHistory = async (customer) => {
-    setLoading(true);
-    try {
-      const paymentsCollection = collection(db, "payments");
-      const q = query(
-        paymentsCollection,
-        where("customerId", "==", customer.id),
-        where("location", "==", selectedLocation)
-      );
-      const querySnapshot = await getDocs(q);
-      const paymentRecords = querySnapshot.docs.map((doc) => ({
-        date: doc.data().date,
-        cashAmount: doc.data().cashAmount || 0,
-        onlineAmount: doc.data().onlineAmount || 0,
-        totalAmount: doc.data().totalAmount || 0,
-      }));
-      setPaymentHistory(paymentRecords);
-      setEditCustomerData(customer);
-      setIsPaymentHistoryModalOpen(true);
-    } catch (error) {
-      console.error("Error fetching payment history:", error);
-    } finally {
-      setLoading(false);
-    }
+    const paymentsCollection = collection(db, "payments");
+    const q = query(
+      paymentsCollection,
+      where("customerId", "==", customer.id),
+      where("location", "==", selectedLocation)
+    );
+    const querySnapshot = await getDocs(q);
+    const paymentRecords = querySnapshot.docs.map((doc) => ({
+      date: doc.data().date,
+      cashAmount: doc.data().cashAmount || 0,
+      onlineAmount: doc.data().onlineAmount || 0,
+      totalAmount: doc.data().totalAmount || 0,
+    }));
+
+    // Sort paymentRecords by date in descending order (most recent first)
+    paymentRecords.sort(
+      (a, b) =>
+        moment(b.date, "YYYY-MM-DD").unix() -
+        moment(a.date, "YYYY-MM-DD").unix()
+    );
+
+    // Set states and open modal after data is fetched and sorted
+    setPaymentHistory(paymentRecords);
+    setEditCustomerData(customer);
+    setIsPaymentHistoryModalOpen(true);
   };
 
   if (!activeTables || !Array.isArray(activeTables)) {
@@ -961,7 +963,8 @@ const SalesReport = ({
       title: "Date",
       dataIndex: "date",
       key: "date",
-      render: (date) => moment(date, "YYYY-MM-DD").format("YYYY-MM-DD"),
+      render: (date) =>
+        date ? moment(date, "YYYY-MM-DD").format("MMMM D, YYYY") : "—",
     },
     {
       title: "Cash Amount (Rs)",
