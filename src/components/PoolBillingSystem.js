@@ -1240,8 +1240,8 @@ const PoolBillingSystem = ({
 
   const handleLoginSubmit = async (values) => {
     try {
-      await signInWithEmailAndPassword(auth, values.email, values.password);
-      if (values.email === "hop@gmail.com") {
+      const { email, password } = values;
+      if (email === "hop@gmail.com" && password === "123456") {
         if (dropdownAction === "edit") {
           const record = activeTables.find((t) => t.id === dropdownRecordId);
           if (record) handleEdit(record);
