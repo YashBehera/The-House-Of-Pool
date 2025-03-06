@@ -135,13 +135,13 @@ const Navbar = ({
     } else if (userRole === "full" || isActionAuthenticated) {
       switch (action) {
         case "inventory":
-          navigate("/inventory");
+          navigate(`/inventory?location=${selectedLocation}`);
           break;
         case "reports":
-          navigate("/reports");
+          navigate(`/reports?location=${selectedLocation}`);
           break;
         case "expenses":
-          navigate("/expenses");
+          navigate(`/expenses?location=${selectedLocation}`);
           break;
         default:
           break;
@@ -182,13 +182,15 @@ const Navbar = ({
       setIsActionAuthenticated(true);
       switch (dropdownAction) {
         case "inventory":
-          navigate("/inventory");
+          navigate(
+            `/inventory?location=${pendingLocation || selectedLocation}`
+          );
           break;
         case "reports":
-          navigate("/reports");
+          navigate(`/reports?location=${pendingLocation || selectedLocation}`);
           break;
         case "expenses":
-          navigate("/expenses");
+          navigate(`/expenses?location=${pendingLocation || selectedLocation}`);
           break;
         case "location":
           if (pendingLocation) {
