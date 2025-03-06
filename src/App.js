@@ -1,12 +1,54 @@
-import React, { useState } from "react";
-import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { BrowserRouter as Router, Route, Routes, useLocation } from "react-router-dom";
 import PoolBillingSystem from "./components/PoolBillingSystem";
 import SalesReport from "./components/SalesReport";
-import Inventory from "./components/Inventory";
+// import Inventory from "./components/Inventory"; // Optional: Keep as a wrapper if needed
 import OldInventory from "./components/OldInventory";
 import NewInventory from "./components/NewInventory";
 import Expenses from "./components/Expenses";
 import Queue from "./components/Queue";
+
+// Wrapper component to extract query params and pass props
+const RouteWrapper = ({ Component, activeTables, setActiveTables, selectedLocation, setSelectedLocation }) => {
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  const locationFromUrl = queryParams.get("location") || selectedLocation;
+
+  // Sync App's selectedLocation with URL when it changes
+  useEffect(() => {
+    if (locationFromUrl !== selectedLocation) {
+      setSelectedLocation(locationFromUrl);
+    }
+  }, [locationFromUrl, selectedLocation, setSelectedLocation]);
+
+  return (
+    <Component
+      activeTables={activeTables}
+      setActiveTables={setActiveTables}
+      selectedLocation={locationFromUrl}
+      setSelectedLocation={setSelectedLocation}
+    />
+  );
+};
+
+// Inventory wrapper to conditionally render based on location
+const InventoryWrapper = ({ selectedLocation, setSelectedLocation }) => {
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  const locationFromUrl = queryParams.get("location") || selectedLocation;
+
+  useEffect(() => {
+    if (locationFromUrl !== selectedLocation) {
+      setSelectedLocation(locationFromUrl);
+    }
+  }, [locationFromUrl, selectedLocation, setSelectedLocation]);
+
+  return locationFromUrl === "New House Of Pool" ? (
+    <NewInventory selectedLocation={locationFromUrl} setSelectedLocation={setSelectedLocation} />
+  ) : (
+    <OldInventory selectedLocation={locationFromUrl} setSelectedLocation={setSelectedLocation} />
+  );
+};
 
 export default function App() {
   const [activeTables, setActiveTables] = useState([]); // Stores sales data
@@ -19,7 +61,8 @@ export default function App() {
         <Route
           path="/"
           element={
-            <PoolBillingSystem
+            <RouteWrapper
+              Component={PoolBillingSystem}
               activeTables={activeTables}
               setActiveTables={setActiveTables}
               selectedLocation={selectedLocation}
@@ -30,7 +73,8 @@ export default function App() {
         <Route
           path="/reports"
           element={
-            <SalesReport
+            <RouteWrapper
+              Component={SalesReport}
               activeTables={activeTables}
               setActiveTables={setActiveTables}
               selectedLocation={selectedLocation}
@@ -41,22 +85,19 @@ export default function App() {
         <Route
           path="/inventory"
           element={
-            <>
-              <NewInventory
-                selectedLocation={selectedLocation}
-                setSelectedLocation={setSelectedLocation}
-              />
-              <OldInventory
-                selectedLocation={selectedLocation}
-                setSelectedLocation={setSelectedLocation}
-              />
-            </>
+            <InventoryWrapper
+              selectedLocation={selectedLocation}
+              setSelectedLocation={setSelectedLocation}
+            />
           }
         />
         <Route
           path="/expenses"
           element={
-            <Expenses
+            <RouteWrapper
+              Component={Expenses}
+              activeTables={activeTables}
+              setActiveTables={setActiveTables}
               selectedLocation={selectedLocation}
               setSelectedLocation={setSelectedLocation}
             />
@@ -65,7 +106,8 @@ export default function App() {
         <Route
           path="/queue"
           element={
-            <Queue
+            <RouteWrapper
+              Component={Queue}
               activeTables={activeTables}
               setActiveTables={setActiveTables}
               selectedLocation={selectedLocation}
