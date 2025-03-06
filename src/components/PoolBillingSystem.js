@@ -2372,6 +2372,37 @@ const PoolBillingSystem = ({
             </Form.Item>
 
             <Form.Item
+              name="onlineAmount"
+              label="Online Amount (Rs)"
+              rules={[
+                { required: true, message: "Please enter online amount" },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    const online = parseFloat(value) || 0; // Convert to number, default to 0 if invalid
+                    if (online < 0) {
+                      return Promise.reject(
+                        new Error("Online amount cannot be negative")
+                      );
+                    }
+                    const cash = parseFloat(getFieldValue("cashAmount")) || 0;
+                    const total = parseFloat(getFieldValue("totalAmount")) || 0;
+
+                    // Only validate the sum if both cash and online are filled
+                    if (value && getFieldValue("cashAmount")) {
+                      if (cash + online !== total) {
+                        return Promise.reject(
+                          new Error("Cash + Online must equal Total Amount")
+                        );
+                      }
+                    }
+                    return Promise.resolve();
+                  },
+                }),
+              ]}
+            >
+              <Input type="number" min={0} step="0.01" />
+            </Form.Item>
+            <Form.Item
               name="cashAmount"
               label="Cash Amount (Rs)"
               rules={[
@@ -2403,38 +2434,6 @@ const PoolBillingSystem = ({
             >
               <Input type="number" min={0} step="0.01" />
             </Form.Item>
-            <Form.Item
-              name="onlineAmount"
-              label="Online Amount (Rs)"
-              rules={[
-                { required: true, message: "Please enter online amount" },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    const online = parseFloat(value) || 0; // Convert to number, default to 0 if invalid
-                    if (online < 0) {
-                      return Promise.reject(
-                        new Error("Online amount cannot be negative")
-                      );
-                    }
-                    const cash = parseFloat(getFieldValue("cashAmount")) || 0;
-                    const total = parseFloat(getFieldValue("totalAmount")) || 0;
-
-                    // Only validate the sum if both cash and online are filled
-                    if (value && getFieldValue("cashAmount")) {
-                      if (cash + online !== total) {
-                        return Promise.reject(
-                          new Error("Cash + Online must equal Total Amount")
-                        );
-                      }
-                    }
-                    return Promise.resolve();
-                  },
-                }),
-              ]}
-            >
-              <Input type="number" min={0} step="0.01" />
-            </Form.Item>
-
             <Form.Item label="Payment Option">
               <Select
                 value={selectedPaymentOption}
@@ -2467,7 +2466,11 @@ const PoolBillingSystem = ({
           }}
           footer={null}
         >
-          <Form form={foodPaymentForm} onFinish={handleFoodPaymentSubmit}>
+          <Form
+            form={foodPaymentForm}
+            onFinish={handleFoodPaymentSubmit}
+            layout="vertical" // Added for better spacing
+          >
             <Form.Item label="Ordered Items">
               <Input value={aggregateItems(dropdownItems)} disabled />
             </Form.Item>
@@ -2475,20 +2478,69 @@ const PoolBillingSystem = ({
               <Input disabled />
             </Form.Item>
             <Form.Item
-              name="cashAmount"
-              label="Cash Amount (Rs)"
-              rules={[{ required: true, message: "Please enter cash amount" }]}
-            >
-              <Input type="number" min={0} />
-            </Form.Item>
-            <Form.Item
               name="onlineAmount"
               label="Online Amount (Rs)"
               rules={[
                 { required: true, message: "Please enter online amount" },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    const online = parseFloat(value) || 0; // Convert to number, default to 0 if invalid
+                    if (online < 0) {
+                      return Promise.reject(
+                        new Error("Online amount cannot be negative")
+                      );
+                    }
+                    const cash = parseFloat(getFieldValue("cashAmount")) || 0;
+                    const total =
+                      parseFloat(getFieldValue("totalPayment")) || 0;
+
+                    // Only validate the sum if both cash and online are filled
+                    if (value && getFieldValue("cashAmount")) {
+                      if (cash + online !== total) {
+                        return Promise.reject(
+                          new Error("Cash + Online must equal Total Amount")
+                        );
+                      }
+                    }
+                    return Promise.resolve();
+                  },
+                }),
               ]}
             >
-              <Input type="number" min={0} />
+              <Input type="number" min={0} step="0.01" />
+            </Form.Item>
+            <Form.Item
+              name="cashAmount"
+              label="Cash Amount (Rs)"
+              rules={[
+                { required: true, message: "Please enter cash amount" },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    const cash = parseFloat(value) || 0; // Convert to number, default to 0 if invalid
+                    if (cash < 0) {
+                      return Promise.reject(
+                        new Error("Cash amount cannot be negative")
+                      );
+                    }
+                    const online =
+                      parseFloat(getFieldValue("onlineAmount")) || 0;
+                    const total =
+                      parseFloat(getFieldValue("totalPayment")) || 0;
+
+                    // Only validate the sum if both cash and online are filled
+                    if (value && getFieldValue("onlineAmount")) {
+                      if (cash + online !== total) {
+                        return Promise.reject(
+                          new Error("Cash + Online must equal Total Amount")
+                        );
+                      }
+                    }
+                    return Promise.resolve();
+                  },
+                }),
+              ]}
+            >
+              <Input type="number" min={0} step="0.01" />
             </Form.Item>
             <Form.Item>
               <Button type="primary" htmlType="submit">
