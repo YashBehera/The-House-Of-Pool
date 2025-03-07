@@ -130,6 +130,8 @@ const PoolBillingSystem = ({
   const [foodPaymentForm] = Form.useForm();
   const [foodTableId, setFoodTableId] = useState(null);
   const [dropdownItems, setDropdownItems] = useState([]); // New state for dropdown working set
+  const [formErrors, setFormErrors] = useState([]);
+  const [editFormErrors, setEditFormErrors] = useState([]);
 
   useEffect(() => {
     if (!isAuthenticated || !selectedLocation) return;
@@ -608,7 +610,7 @@ const PoolBillingSystem = ({
     const minutes = totalMinutes % 60;
     const durationString =
       hours > 0
-        ? `${hours} hour${hours > 1 ? "s" : ""}${
+        ? `${hours} hr${hours > 1 ? "s" : ""}${
             minutes > 0 ? ` ${minutes} min` : ""
           }`
         : `${minutes} min`;
@@ -2304,10 +2306,72 @@ const PoolBillingSystem = ({
         <Modal
           title="Edit Table Entry"
           open={isEditModalOpen}
-          onCancel={() => setIsEditModalOpen(false)}
+          onCancel={() => {
+            setIsEditModalOpen(false);
+            editForm.resetFields();
+            setEditFormErrors([]); // Reset errors on cancel
+          }}
           footer={null}
         >
-          <Form form={editForm} onFinish={(values) => updateTable(values)}>
+          {/* Error Display */}
+          {editFormErrors.length > 0 && (
+            <div
+              style={{
+                backgroundColor: "#fff1f0",
+                border: "1px solid #ffa39e",
+                borderRadius: "4px",
+                padding: "10px",
+                marginBottom: "16px",
+                color: "#cf1322",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <span style={{ fontSize: "16px" }}>⚠️</span>
+              <div>
+                {editFormErrors.map((error, index) => (
+                  <div key={index}>{error}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <Form
+            form={editForm}
+            onFinish={(values) => {
+              const cash = parseFloat(values.cashAmount) || 0;
+              const online = parseFloat(values.onlineAmount) || 0;
+              const total = parseFloat(values.totalAmount) || 0;
+
+              // Reset errors before validation
+              setEditFormErrors([]);
+
+              // Validation after submission
+              const errors = [];
+              if (total > 0 && cash === 0 && online === 0) {
+                errors.push("Cash or Online must be greater than 0");
+              }
+              if (cash + online !== total) {
+                errors.push("Cash + Online must equal Total Amount");
+              }
+              if (cash < 0) {
+                errors.push("Cash amount cannot be negative");
+              }
+              if (online < 0) {
+                errors.push("Online amount cannot be negative");
+              }
+
+              // If there are errors, display them and stop submission
+              if (errors.length > 0) {
+                setEditFormErrors(errors);
+                return;
+              }
+
+              // If validation passes, proceed with submission
+              updateTable(values);
+            }}
+          >
             <Form.Item name="name" label="Customer Name">
               <Input />
             </Form.Item>
@@ -2370,34 +2434,11 @@ const PoolBillingSystem = ({
             <Form.Item name="totalAmount" label="Total Amount (Rs)">
               <Input disabled />
             </Form.Item>
-
             <Form.Item
               name="onlineAmount"
               label="Online Amount (Rs)"
               rules={[
                 { required: true, message: "Please enter online amount" },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    const online = parseFloat(value) || 0; // Convert to number, default to 0 if invalid
-                    if (online < 0) {
-                      return Promise.reject(
-                        new Error("Online amount cannot be negative")
-                      );
-                    }
-                    const cash = parseFloat(getFieldValue("cashAmount")) || 0;
-                    const total = parseFloat(getFieldValue("totalAmount")) || 0;
-
-                    // Only validate the sum if both cash and online are filled
-                    if (value && getFieldValue("cashAmount")) {
-                      if (cash + online !== total) {
-                        return Promise.reject(
-                          new Error("Cash + Online must equal Total Amount")
-                        );
-                      }
-                    }
-                    return Promise.resolve();
-                  },
-                }),
               ]}
             >
               <Input type="number" min={0} step="0.01" />
@@ -2405,32 +2446,7 @@ const PoolBillingSystem = ({
             <Form.Item
               name="cashAmount"
               label="Cash Amount (Rs)"
-              rules={[
-                { required: true, message: "Please enter cash amount" },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    const cash = parseFloat(value) || 0; // Convert to number, default to 0 if invalid
-                    if (cash < 0) {
-                      return Promise.reject(
-                        new Error("Cash amount cannot be negative")
-                      );
-                    }
-                    const online =
-                      parseFloat(getFieldValue("onlineAmount")) || 0;
-                    const total = parseFloat(getFieldValue("totalAmount")) || 0;
-
-                    // Only validate the sum if both cash and online are filled
-                    if (value && getFieldValue("onlineAmount")) {
-                      if (cash + online !== total) {
-                        return Promise.reject(
-                          new Error("Cash + Online must equal Total Amount")
-                        );
-                      }
-                    }
-                    return Promise.resolve();
-                  },
-                }),
-              ]}
+              rules={[{ required: true, message: "Please enter cash amount" }]}
             >
               <Input type="number" min={0} step="0.01" />
             </Form.Item>
@@ -2463,91 +2479,107 @@ const PoolBillingSystem = ({
             setIsFoodPaymentModalOpen(false);
             foodPaymentForm.resetFields();
             setFoodTableId(null);
+            setFormErrors([]); // Reset errors on cancel
           }}
           footer={null}
         >
-          <Form
-            form={foodPaymentForm}
-            onFinish={handleFoodPaymentSubmit}
-            layout="vertical" // Added for better spacing
-          >
-            <Form.Item label="Ordered Items">
-              <Input value={aggregateItems(dropdownItems)} disabled />
-            </Form.Item>
-            <Form.Item name="totalPayment" label="Payment Amount (Rs)">
-              <Input disabled />
-            </Form.Item>
-            <Form.Item
-              name="onlineAmount"
-              label="Online Amount (Rs)"
-              rules={[
-                { required: true, message: "Please enter online amount" },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    const online = parseFloat(value) || 0; // Convert to number, default to 0 if invalid
-                    if (online < 0) {
-                      return Promise.reject(
-                        new Error("Online amount cannot be negative")
-                      );
-                    }
-                    const cash = parseFloat(getFieldValue("cashAmount")) || 0;
-                    const total =
-                      parseFloat(getFieldValue("totalPayment")) || 0;
+          {/* State to hold errors */}
+          {(() => {
+            return (
+              <>
+                {/* Error Display */}
+                {formErrors.length > 0 && (
+                  <div
+                    style={{
+                      backgroundColor: "#fff1f0",
+                      border: "1px solid #ffa39e",
+                      borderRadius: "4px",
+                      padding: "10px",
+                      marginBottom: "16px",
+                      color: "#cf1322",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <span style={{ fontSize: "16px" }}>⚠️</span>
+                    <div>
+                      {formErrors.map((error, index) => (
+                        <div key={index}>{error}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                    // Only validate the sum if both cash and online are filled
-                    if (value && getFieldValue("cashAmount")) {
-                      if (cash + online !== total) {
-                        return Promise.reject(
-                          new Error("Cash + Online must equal Total Amount")
-                        );
-                      }
+                <Form
+                  form={foodPaymentForm}
+                  onFinish={(values) => {
+                    const cash = parseFloat(values.cashAmount) || 0;
+                    const online = parseFloat(values.onlineAmount) || 0;
+                    const total = parseFloat(values.totalPayment) || 0;
+
+                    // Reset errors before validation
+                    setFormErrors([]);
+
+                    // Validation after submission
+                    const errors = [];
+                    if (total > 0 && cash === 0 && online === 0) {
+                      errors.push("Cash or Online must be greater than 0");
                     }
-                    return Promise.resolve();
-                  },
-                }),
-              ]}
-            >
-              <Input type="number" min={0} step="0.01" />
-            </Form.Item>
-            <Form.Item
-              name="cashAmount"
-              label="Cash Amount (Rs)"
-              rules={[
-                { required: true, message: "Please enter cash amount" },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    const cash = parseFloat(value) || 0; // Convert to number, default to 0 if invalid
+                    if (cash + online !== total) {
+                      errors.push("Cash + Online must equal Total Amount");
+                    }
                     if (cash < 0) {
-                      return Promise.reject(
-                        new Error("Cash amount cannot be negative")
-                      );
+                      errors.push("Cash amount cannot be negative");
                     }
-                    const online =
-                      parseFloat(getFieldValue("onlineAmount")) || 0;
-                    const total =
-                      parseFloat(getFieldValue("totalPayment")) || 0;
+                    if (online < 0) {
+                      errors.push("Online amount cannot be negative");
+                    }
 
-                    // Only validate the sum if both cash and online are filled
-                    if (value && getFieldValue("onlineAmount")) {
-                      if (cash + online !== total) {
-                        return Promise.reject(
-                          new Error("Cash + Online must equal Total Amount")
-                        );
-                      }
+                    // If there are errors, display them and stop submission
+                    if (errors.length > 0) {
+                      setFormErrors(errors);
+                      return;
                     }
-                    return Promise.resolve();
-                  },
-                }),
-              ]}
-            >
-              <Input type="number" min={0} step="0.01" />
-            </Form.Item>
-            <Form.Item>
-              <Button type="primary" htmlType="submit">
-                Save Payment
-              </Button>
-            </Form.Item>
-          </Form>
+
+                    // If validation passes, proceed with submission
+                    handleFoodPaymentSubmit(values);
+                  }}
+                  layout="vertical"
+                >
+                  <Form.Item label="Ordered Items">
+                    <Input value={aggregateItems(dropdownItems)} disabled />
+                  </Form.Item>
+                  <Form.Item name="totalPayment" label="Payment Amount (Rs)">
+                    <Input disabled />
+                  </Form.Item>
+                  <Form.Item
+                    name="onlineAmount"
+                    label="Online Amount (Rs)"
+                    rules={[
+                      { required: true, message: "Please enter online amount" },
+                    ]}
+                  >
+                    <Input type="number" min={0} step="0.01" />
+                  </Form.Item>
+                  <Form.Item
+                    name="cashAmount"
+                    label="Cash Amount (Rs)"
+                    rules={[
+                      { required: true, message: "Please enter cash amount" },
+                    ]}
+                  >
+                    <Input type="number" min={0} step="0.01" />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit">
+                      Save Payment
+                    </Button>
+                  </Form.Item>
+                </Form>
+              </>
+            );
+          })()}
         </Modal>
 
         {isDropdownOpen && (
