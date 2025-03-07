@@ -874,7 +874,7 @@ const SalesReport = ({
       render: (dues) => `Rs ${dues.toFixed(2)}`,
     },
     {
-      title: "Range Dues (Rs) 📅",
+      title: "Today Dues (Rs) 📅",
       key: "todaysDues",
       render: (_, record) => `Rs ${getTodaysDues(record.name).toFixed(2)}`,
       sorter: (a, b) => getTodaysDues(a.name) - getTodaysDues(b.name),
@@ -1048,22 +1048,6 @@ const SalesReport = ({
               <Col span={6}>
                 <Card
                   style={{
-                    backgroundColor: "#f6ffed",
-                    borderLeft: "5px solid #52c41a",
-                  }}
-                >
-                  <Statistic
-                    title="Total"
-                    value={totalRevenue.toFixed(2)}
-                    prefix={<MoneyCollectOutlined />}
-                    suffix="Rs"
-                    valueStyle={{ color: "#52c41a", fontSize: "20px" }}
-                  />
-                </Card>
-              </Col>
-              <Col span={6}>
-                <Card
-                  style={{
                     backgroundColor: "#e6f7ff",
                     borderLeft: "5px solid #1890ff",
                   }}
@@ -1106,6 +1090,22 @@ const SalesReport = ({
                     prefix={<MoneyCollectOutlined />}
                     suffix="Rs"
                     valueStyle={{ color: "#eb2f96", fontSize: "20px" }}
+                  />
+                </Card>
+              </Col>
+              <Col span={6}>
+                <Card
+                  style={{
+                    backgroundColor: "#f6ffed",
+                    borderLeft: "5px solid #52c41a",
+                  }}
+                >
+                  <Statistic
+                    title="Total Sales"
+                    value={totalRevenue.toFixed(2)}
+                    prefix={<MoneyCollectOutlined />}
+                    suffix="Rs"
+                    valueStyle={{ color: "#52c41a", fontSize: "20px" }}
                   />
                 </Card>
               </Col>
