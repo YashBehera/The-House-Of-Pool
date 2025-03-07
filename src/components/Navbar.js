@@ -132,7 +132,6 @@ const Navbar = ({
 
   const handleRestrictedAction = (action) => {
     if (!userRole) {
-      alert("You need to log in to access this feature.");
       setIsProfileDropdownOpen(true);
     } else if (userRole === "full" || isActionAuthenticated) {
       switch (action) {
@@ -163,7 +162,6 @@ const Navbar = ({
 
   const handleLocationChange = (value) => {
     if (!userRole) {
-      alert("You need to log in to access this feature.");
       setIsProfileDropdownOpen(true);
     } else if (userRole === "full" || isActionAuthenticated) {
       setSelectedLocation(value);
