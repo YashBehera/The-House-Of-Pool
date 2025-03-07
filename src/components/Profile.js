@@ -2,10 +2,13 @@ import React, { useEffect, useState } from "react";
 import { auth, db } from "./firebase";
 import { doc, getDoc } from "firebase/firestore";
 import Login from "./Login";
+import { useNavigate } from "react-router-dom";
+
 
 function Profile() {
   const [userDetails, setUserDetails] = useState(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   // Fetch user data and listen to auth state changes
   useEffect(() => {
@@ -57,6 +60,7 @@ function Profile() {
     try {
       setLoading(true);
       await auth.signOut();
+      navigate('/');
       console.log("Profile: User logged out successfully!");
       setUserDetails(null);
       setLoading(false);
