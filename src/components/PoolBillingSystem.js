@@ -1420,7 +1420,7 @@ const PoolBillingSystem = ({
                     zIndex: 9,
                   }}
                 >
-                  Add Regular Customer
+                  Regular Customer
                 </Button>
                 <h1
                   style={{
@@ -2023,6 +2023,17 @@ const PoolBillingSystem = ({
               render: (table) => (
                 <span style={{ whiteSpace: "nowrap" }}>{table}</span>
               ),
+            },
+            {
+              title: "Size",
+              key: "size",
+              render: (_, record) => {
+                const tableSize =
+                  record.location === LOCATIONS.OLD_HOUSE
+                    ? getTableSize(record.table)
+                    : ""; // No size for New House tables unless defined
+                return tableSize || "-"; // Display "-" if no size
+              },
             },
             {
               title: "Name",
