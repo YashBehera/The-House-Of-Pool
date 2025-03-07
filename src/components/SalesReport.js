@@ -29,6 +29,7 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 import moment from "moment";
+import "./sales.css";
 import React, { useEffect, useRef, useState } from "react";
 import { auth, db } from "./firebase";
 import logo1 from "./HOP3.png";
@@ -1366,7 +1367,7 @@ const SalesReport = ({
             <div className="overlay fixed top-0 left-0 w-full h-full bg-zinc-900 opacity-50 z-10"></div>
             <div
               ref={dropdownRef}
-              className="dropdown-menu fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-11/12 max-w-[40rem] h-[26rem] bg-white shadow-2xl rounded-3xl p-2 z-30 flex flex-col md:flex-row items-center gap-2 animate-fade-in"
+              className="dropdown-menu fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-11/12 max-w-[40rem] h-[26rem] bg-white shadow-2xl rounded-3xl p-2 z-30 flex flex-row md:flex-row items-center gap-2 animate-fade-in"
             >
               <div>
                 <img
