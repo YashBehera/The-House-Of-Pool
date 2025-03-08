@@ -14,7 +14,6 @@ import {
   Table,
   Typography,
 } from "antd";
-import { signInWithEmailAndPassword } from "firebase/auth";
 import {
   collection,
   doc,
@@ -31,7 +30,7 @@ import {
 import moment from "moment";
 import "./sales.css";
 import React, { useEffect, useRef, useState } from "react";
-import { auth, db } from "./firebase";
+import { db } from "./firebase";
 import logo1 from "./HOP3.png";
 import logo2 from "./HOP5.png";
 import Navbar from "./Navbar";
@@ -987,6 +986,25 @@ const SalesReport = ({
     },
   ];
 
+  const handleLoginSubmit = async (values) => {
+    try {
+      const { email, password } = values;
+      if (email === "hop@gmail.com" && password === "123456") {
+        setIsAuthenticated(true);
+        if (dropdownActionCustomer) {
+          handleEditCustomer(dropdownActionCustomer);
+        }
+        setIsDropdownOpen(false);
+        loginForm.resetFields();
+      } else {
+        alert("You do not have permission to access this feature.");
+      }
+    } catch (error) {
+      console.error("Login failed:", error);
+      alert("Invalid email or password. Please try again.");
+    }
+  };
+
   return (
     <div>
       <Navbar
@@ -1391,24 +1409,7 @@ const SalesReport = ({
                 <div>
                   <Form
                     form={loginForm}
-                    onFinish={async (values) => {
-                      try {
-                        await signInWithEmailAndPassword(
-                          auth,
-                          values.email,
-                          values.password
-                        );
-                        setIsAuthenticated(true);
-                        if (dropdownActionCustomer) {
-                          handleEditCustomer(dropdownActionCustomer);
-                        }
-                        setIsDropdownOpen(false);
-                        loginForm.resetFields();
-                      } catch (error) {
-                        console.error("Login failed:", error);
-                        alert("Invalid email or password. Please try again.");
-                      }
-                    }}
+                    onFinish={handleLoginSubmit}
                     className="flex flex-col items-center justify-center"
                   >
                     <Form.Item
