@@ -2,11 +2,11 @@ import React, { useState, useEffect } from "react";
 import { BrowserRouter as Router, Route, Routes, useLocation } from "react-router-dom";
 import PoolBillingSystem from "./components/PoolBillingSystem";
 import SalesReport from "./components/SalesReport";
-// import Inventory from "./components/Inventory"; // Optional: Keep as a wrapper if needed
 import OldInventory from "./components/OldInventory";
 import NewInventory from "./components/NewInventory";
 import Expenses from "./components/Expenses";
 import Queue from "./components/Queue";
+import Navbar from "./components/Navbar"; // Import Navbar
 
 // Wrapper component to extract query params and pass props
 const RouteWrapper = ({ Component, activeTables, setActiveTables, selectedLocation, setSelectedLocation }) => {
@@ -51,71 +51,80 @@ const InventoryWrapper = ({ selectedLocation, setSelectedLocation }) => {
 };
 
 export default function App() {
-  const [activeTables, setActiveTables] = useState([]); // Stores sales data
-  const orderedItems = activeTables.flatMap((t) => t.orderedItems); // Extract all ordered items
+  const [activeTables, setActiveTables] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState("Old House Of Pool");
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
 
   return (
     <Router>
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <RouteWrapper
-              Component={PoolBillingSystem}
-              activeTables={activeTables}
-              setActiveTables={setActiveTables}
-              selectedLocation={selectedLocation}
-              setSelectedLocation={setSelectedLocation}
-            />
-          }
-        />
-        <Route
-          path="/reports"
-          element={
-            <RouteWrapper
-              Component={SalesReport}
-              activeTables={activeTables}
-              setActiveTables={setActiveTables}
-              selectedLocation={selectedLocation}
-              setSelectedLocation={setSelectedLocation}
-            />
-          }
-        />
-        <Route
-          path="/inventory"
-          element={
-            <InventoryWrapper
-              selectedLocation={selectedLocation}
-              setSelectedLocation={setSelectedLocation}
-            />
-          }
-        />
-        <Route
-          path="/expenses"
-          element={
-            <RouteWrapper
-              Component={Expenses}
-              activeTables={activeTables}
-              setActiveTables={setActiveTables}
-              selectedLocation={selectedLocation}
-              setSelectedLocation={setSelectedLocation}
-            />
-          }
-        />
-        <Route
-          path="/queue"
-          element={
-            <RouteWrapper
-              Component={Queue}
-              activeTables={activeTables}
-              setActiveTables={setActiveTables}
-              selectedLocation={selectedLocation}
-              setSelectedLocation={setSelectedLocation}
-            />
-          }
-        />
-      </Routes>
+      <Navbar
+        selectedDate={selectedDate}
+        setSelectedDate={setSelectedDate}
+        selectedLocation={selectedLocation}
+        setSelectedLocation={setSelectedLocation}
+      />
+      <div style={{ marginTop: "56px" }}> {/* Offset for fixed Navbar */}
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <RouteWrapper
+                Component={PoolBillingSystem}
+                activeTables={activeTables}
+                setActiveTables={setActiveTables}
+                selectedLocation={selectedLocation}
+                setSelectedLocation={setSelectedLocation}
+              />
+            }
+          />
+
+          <Route
+            path="/reports"
+            element={
+              <RouteWrapper
+                Component={SalesReport}
+                activeTables={activeTables}
+                setActiveTables={setActiveTables}
+                selectedLocation={selectedLocation}
+                setSelectedLocation={setSelectedLocation}
+              />
+            }
+          />
+          <Route
+            path="/inventory"
+            element={
+              <InventoryWrapper
+                selectedLocation={selectedLocation}
+                setSelectedLocation={setSelectedLocation}
+              />
+            }
+          />
+          <Route
+            path="/expenses"
+            element={
+              <RouteWrapper
+                Component={Expenses}
+                activeTables={activeTables}
+                setActiveTables={setActiveTables}
+                selectedLocation={selectedLocation}
+                setSelectedLocation={setSelectedLocation}
+              />
+            }
+          />
+          <Route
+            path="/queue"
+            element={
+              <RouteWrapper
+                Component={Queue}
+                activeTables={activeTables}
+                setActiveTables={setActiveTables}
+                selectedLocation={selectedLocation}
+                setSelectedLocation={setSelectedLocation}
+              />
+            }
+          />
+        </Routes>
+      </div>
     </Router>
   );
 }
