@@ -18,7 +18,6 @@ import { v4 as uuidv4 } from "uuid";
 const { Title } = Typography;
 const { Option } = Select;
 
-// Constants from PoolBillingSystem.js
 const LOCATIONS = {
   OLD_HOUSE: "Old House Of Pool",
   NEW_HOUSE: "New House Of Pool",
@@ -106,6 +105,47 @@ const Queue = ({
     });
   };
 
+  // Reset queue at midnight
+  const resetQueueAtMidnight = () => {
+    const now = moment();
+    const midnight = moment().endOf("day"); // Midnight tonight
+    const msUntilMidnight = midnight.diff(now);
+
+    // Reset immediately if it's a new day since last load
+    const lastResetDate = localStorage.getItem(`lastReset_${selectedLocation}`);
+    if (!lastResetDate || !moment(lastResetDate).isSame(now, "day")) {
+      setQueueData([]);
+      saveQueue([]);
+      localStorage.setItem(
+        `lastReset_${selectedLocation}`,
+        now.format("YYYY-MM-DD")
+      );
+    }
+
+    // Set a timeout to reset at midnight
+    const timeoutId = setTimeout(() => {
+      setQueueData([]);
+      saveQueue([]);
+      localStorage.setItem(
+        `lastReset_${selectedLocation}`,
+        moment().format("YYYY-MM-DD")
+      );
+
+      // Schedule next reset for tomorrow midnight
+      setInterval(() => {
+        setQueueData([]);
+        saveQueue([]);
+        localStorage.setItem(
+          `lastReset_${selectedLocation}`,
+          moment().format("YYYY-MM-DD")
+        );
+      }, 24 * 60 * 60 * 1000); // Every 24 hours
+    }, msUntilMidnight);
+
+    // Cleanup timeout on unmount
+    return () => clearTimeout(timeoutId);
+  };
+
   useEffect(() => {
     if (!selectedLocation) return;
 
@@ -123,7 +163,14 @@ const Queue = ({
         console.error("Firestore listener error:", error);
       }
     );
-    return () => unsub();
+
+    // Reset queue at midnight
+    const cleanup = resetQueueAtMidnight();
+
+    return () => {
+      unsub();
+      cleanup();
+    };
   }, [selectedLocation]);
 
   const handleAddQueue = (values) => {
@@ -197,23 +244,27 @@ const Queue = ({
       dataIndex: "name",
       key: "name",
       render: (text) => <strong>{text}</strong>,
+      align: "center", // Center-align column
     },
     {
       title: "Mobile Number",
       dataIndex: "mobile",
       key: "mobile",
+      align: "center",
     },
     {
       title: "Game Types",
       dataIndex: "gameTypes",
       key: "gameTypes",
       render: (gameTypes) => gameTypes.join(", "),
+      align: "center",
     },
     {
       title: "Added At",
       dataIndex: "timestamp",
       key: "timestamp",
       render: (timestamp) => moment(timestamp).format("DD MMM YYYY, hh:mm A"),
+      align: "center",
     },
     {
       title: "Action",
@@ -227,6 +278,7 @@ const Queue = ({
           Appoint Table
         </Button>
       ),
+      align: "center",
     },
   ];
 
@@ -308,7 +360,7 @@ const Queue = ({
               >
                 {GAME_TYPES.filter((type) => {
                   if (selectedLocation === LOCATIONS.OLD_HOUSE) return true;
-                  return type !== "Table Tennis" && type !== "PS5"; // New House only has pool tables
+                  return type !== "Table Tennis" && type !== "PS5";
                 }).map((type) => (
                   <Option key={type} value={type}>
                     {type}
