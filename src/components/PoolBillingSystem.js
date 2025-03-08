@@ -610,7 +610,7 @@ const PoolBillingSystem = ({
     const minutes = totalMinutes % 60;
     const durationString =
       hours > 0
-        ? `${hours} hr${hours > 1 ? "s" : ""}${
+        ? `${hours} hr${
             minutes > 0 ? ` ${minutes} min` : ""
           }`
         : `${minutes} min`;
