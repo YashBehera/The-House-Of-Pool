@@ -290,7 +290,7 @@ const Navbar = ({
           className="text-white text-base hover:text-gray-300"
           onClick={() => navigate(`/queue?location=${getHomeLocation()}`)}
         >
-          <span className="text-white">Waiting Queue</span>
+          <span className="text-white">Waiting</span>
         </Button>
         {userRole !== "restricted" || isActionAuthenticated ? (
           <Select
