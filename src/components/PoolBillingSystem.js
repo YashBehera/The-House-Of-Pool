@@ -2023,6 +2023,7 @@ const PoolBillingSystem = ({
               render: (table) => (
                 <span style={{ whiteSpace: "nowrap" }}>{table}</span>
               ),
+              align: "center",
             },
             {
               title: "Size",
@@ -2034,6 +2035,7 @@ const PoolBillingSystem = ({
                     : ""; // No size for New House tables unless defined
                 return tableSize || "-"; // Display "-" if no size
               },
+              align: "center",
             },
             {
               title: "Name",
@@ -2042,6 +2044,7 @@ const PoolBillingSystem = ({
               render: (name) => (
                 <span style={{ whiteSpace: "nowrap" }}>{name}</span>
               ),
+              align: "center",
             },
             {
               title: "Mobile Number",
@@ -2050,6 +2053,7 @@ const PoolBillingSystem = ({
               render: (phone) => (
                 <span style={{ whiteSpace: "nowrap" }}>{phone}</span>
               ),
+              align: "center",
             },
             {
               title: "Start Time",
@@ -2060,6 +2064,7 @@ const PoolBillingSystem = ({
                   {t ? moment(t).format("hh:mm A") : "—"}
                 </span>
               ),
+              align: "center",
             },
             {
               title: "End Time",
@@ -2070,6 +2075,7 @@ const PoolBillingSystem = ({
                   {t ? moment(t).format("hh:mm A") : "—"}
                 </span>
               ),
+              align: "center",
             },
             {
               title: "Duration",
@@ -2078,37 +2084,50 @@ const PoolBillingSystem = ({
               render: (d) => (
                 <span style={{ whiteSpace: "nowrap" }}>{d || "—"}</span>
               ),
+              align: "center",
             },
             {
               title: "Ordered Items",
               dataIndex: "orderedItems",
               key: "orderedItems",
               render: (items) => (items?.length ? aggregateItems(items) : "—"),
+              align: "center",
             },
             {
               title: "Cash (Rs)",
               dataIndex: "cashAmount",
               key: "cashAmount",
               render: (a) => (a !== undefined ? Math.round(a) : "0"),
+              align: "center",
             },
             {
               title: "Online (Rs)",
               dataIndex: "onlineAmount",
               key: "onlineAmount",
               render: (a) => (a !== undefined ? Math.round(a) : "0"),
+              align: "center",
             },
             {
               title: "Total Amount (Rs)",
               dataIndex: "totalAmount",
               key: "totalAmount",
               render: (a) => (a ? Math.round(a) : "—"),
+              align: "center",
             },
             {
               title: "Actions",
               key: "actions",
+              align: "center",
               render: (_, record) =>
                 record.name === "FOOD" ? (
-                  <div style={{ display: "flex", gap: "10px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
                     <Dropdown
                       overlay={getMenu(record.id)}
                       trigger={["click"]}
@@ -2133,7 +2152,14 @@ const PoolBillingSystem = ({
                     </Dropdown>
                   </div>
                 ) : record.isClosed ? (
-                  <div style={{ display: "flex", gap: "10px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
                     <Button
                       type="default"
                       onClick={() => showDropdown("edit", record.id)}
@@ -2142,7 +2168,14 @@ const PoolBillingSystem = ({
                     </Button>
                   </div>
                 ) : (
-                  <div style={{ display: "flex", gap: "10px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
                     <Button
                       type="primary"
                       onClick={() => {
