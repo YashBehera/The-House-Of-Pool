@@ -220,7 +220,11 @@ const Navbar = ({
   };
 
   const getHomeLocation = () => {
-    if (userRole === "restricted" && pendingLocation && !isActionAuthenticated) {
+    if (
+      userRole === "restricted" &&
+      pendingLocation &&
+      !isActionAuthenticated
+    ) {
       return pendingLocation;
     }
     return selectedLocation;
@@ -290,7 +294,7 @@ const Navbar = ({
           className="text-white text-base hover:text-gray-300"
           onClick={() => navigate(`/queue?location=${getHomeLocation()}`)}
         >
-          <span className="text-white">Waiting</span>
+          <span className="text-white">Waiting Queue</span>
         </Button>
         {userRole !== "restricted" || isActionAuthenticated ? (
           <Select
