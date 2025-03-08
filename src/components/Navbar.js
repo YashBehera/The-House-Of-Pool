@@ -2,7 +2,7 @@ import { Button, Select, Form, Input } from "antd";
 import { doc, getDoc } from "firebase/firestore";
 import React, { useEffect, useRef, useState } from "react";
 import { CgProfile } from "react-icons/cg";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom"; // Add useLocation
 import logo1 from "./HOP3.png";
 import logo2 from "./HOP5.png";
 import Profile from "./Profile";
@@ -24,6 +24,7 @@ const Navbar = ({
   setSelectedLocation,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation(); // Get current location
   const [userDetails, setUserDetails] = useState(
     auth.currentUser
       ? {
@@ -61,19 +62,17 @@ const Navbar = ({
               firstName: user.displayName || "User",
             });
           }
-          // Set user role and default location based on email
           if (user.email === "hop@gmail.com") {
             setUserRole("full");
             setIsActionAuthenticated(true);
-            // No default location change for full access; let user choose
           } else if (user.email === "staff1@gmail.com") {
             setUserRole("restricted");
             setIsActionAuthenticated(false);
-            setSelectedLocation("Old House Of Pool"); // Default to Old House
+            setSelectedLocation("Old House Of Pool");
           } else if (user.email === "staff2@gmail.com") {
             setUserRole("restricted");
             setIsActionAuthenticated(false);
-            setSelectedLocation("New House Of Pool"); // Default to New House
+            setSelectedLocation("New House Of Pool");
           } else {
             setUserRole("unknown");
             setIsActionAuthenticated(false);
@@ -97,7 +96,7 @@ const Navbar = ({
       }
     });
     return () => unsubscribe();
-  }, [setSelectedLocation]); // Added dependency to update location
+  }, [setSelectedLocation]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -168,6 +167,11 @@ const Navbar = ({
       if (userRole === "restricted") {
         setIsActionAuthenticated(false);
       }
+      // For full access, navigate to the current route with the new location
+      if (userRole === "full") {
+        const currentPath = location.pathname; // e.g., "/reports", "/inventory"
+        navigate(`${currentPath}?location=${value}`);
+      }
     } else if (userRole === "restricted") {
       setPendingLocation(value);
       setDropdownAction("location");
@@ -178,7 +182,6 @@ const Navbar = ({
   const handleActionLoginSubmit = async (values) => {
     const { email, password } = values;
     if (email === "hop@gmail.com" && password === "123456") {
-      // Replace with actual admin password
       setIsActionAuthenticated(true);
       switch (dropdownAction) {
         case "inventory":
@@ -199,6 +202,9 @@ const Navbar = ({
             if (userRole === "restricted") {
               setIsActionAuthenticated(false);
             }
+            // Navigate to current route with new location for restricted users after authentication
+            const currentPath = location.pathname;
+            navigate(`${currentPath}?location=${pendingLocation}`);
           }
           break;
         default:
@@ -211,6 +217,13 @@ const Navbar = ({
         "Invalid credentials for this action. Please use admin credentials."
       );
     }
+  };
+
+  const getHomeLocation = () => {
+    if (userRole === "restricted" && pendingLocation && !isActionAuthenticated) {
+      return pendingLocation;
+    }
+    return selectedLocation;
   };
 
   return (
@@ -265,7 +278,7 @@ const Navbar = ({
         >
           <span className="text-white">Reports</span>
         </Button>
-        {/*         <Button
+        {/* <Button
           type="link"
           className="text-white text-base hover:text-gray-300"
           onClick={() => handleRestrictedAction("expenses")}
@@ -275,7 +288,7 @@ const Navbar = ({
         <Button
           type="link"
           className="text-white text-base hover:text-gray-300"
-          onClick={() => navigate("/queue")}
+          onClick={() => navigate(`/queue?location=${getHomeLocation()}`)}
         >
           <span className="text-white">Waiting Queue</span>
         </Button>
