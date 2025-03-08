@@ -63,7 +63,7 @@ export default function App() {
         selectedLocation={selectedLocation}
         setSelectedLocation={setSelectedLocation}
       />
-      <div style={{ marginTop: "56px" }}> {/* Offset for fixed Navbar */}
+      <div style={{ marginTop: "40px" }}> {/* Offset for fixed Navbar */}
         <Routes>
           <Route
             path="/"
