@@ -65,11 +65,11 @@ const Navbar = ({
           if (user.email === "hop@gmail.com") {
             setUserRole("full");
             setIsActionAuthenticated(true);
-          } else if (user.email === "staff1@gmail.com") {
+          } else if (user.email === "oldhop@gmail.com") {
             setUserRole("restricted");
             setIsActionAuthenticated(false);
             setSelectedLocation("Old House Of Pool");
-          } else if (user.email === "staff2@gmail.com") {
+          } else if (user.email === "newhop@gmail.com") {
             setUserRole("restricted");
             setIsActionAuthenticated(false);
             setSelectedLocation("New House Of Pool");
