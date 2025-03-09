@@ -161,7 +161,7 @@ const Queue = ({
       orderedItems: [],
       totalAmount: 0,
       gameType: values.appointmentOption.includes("Table")
-        ? "8-ball Pool"
+        ? "Snooker Table"
         : values.appointmentOption.includes("Controller")
         ? "PS"
         : "Table Tennis",
