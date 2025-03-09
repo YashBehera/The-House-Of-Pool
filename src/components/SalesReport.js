@@ -1023,13 +1023,13 @@ const SalesReport = ({
         }}
       >
         <Title level={3} style={{ textAlign: "center", color: "#1890ff" }}>
-          📊 Sales Report for {selectedLocation}{" "}
+          <div>📊 Sales Report for {selectedLocation} </div>
           {reportType === "daily"
-            ? `on ${selectedDate}`
+            ? `${moment(selectedDate).format("MMMM D, YYYY")}`
             : reportType === "custom" && dateRange.length === 2
-            ? `from ${moment(dateRange[0]).format("YYYY-MM-DD")} to ${moment(
+            ? `From ${moment(dateRange[0]).format("MMMM D, YYYY")} To ${moment(
                 dateRange[1]
-              ).format("YYYY-MM-DD")}`
+              ).format("MMMM D, YYYY")}`
             : ""}
         </Title>
 
@@ -1103,7 +1103,9 @@ const SalesReport = ({
                   }}
                 >
                   <Statistic
-                    title={<span style={{ fontSize: "18px" }}>Balance Received</span>} // Direct styling
+                    title={
+                      <span style={{ fontSize: "18px" }}>Balance Received</span>
+                    } // Direct styling
                     value={balanceReceived.toFixed(2)}
                     prefix={<MoneyCollectOutlined />}
                     suffix="Rs"
@@ -1119,7 +1121,9 @@ const SalesReport = ({
                   }}
                 >
                   <Statistic
-                    title={<span style={{ fontSize: "18px" }}>Total Sales</span>} // Direct styling
+                    title={
+                      <span style={{ fontSize: "18px" }}>Total Sales</span>
+                    } // Direct styling
                     value={totalRevenue.toFixed(2)}
                     prefix={<MoneyCollectOutlined />}
                     suffix="Rs"
