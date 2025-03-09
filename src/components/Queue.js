@@ -51,6 +51,8 @@ const Queue = ({
   const [selectedDate, setSelectedDate] = useState(
     moment().format("YYYY-MM-DD")
   );
+  const [showRemoveConfirmModal, setShowRemoveConfirmModal] = useState(false);
+  const [customerToRemove, setCustomerToRemove] = useState(null);
 
   const GAME_TYPES = [
     "Small Table",
@@ -191,6 +193,26 @@ const Queue = ({
     });
   };
 
+  const handleRemoveFromQueue = (record) => {
+    setCustomerToRemove(record);
+    setShowRemoveConfirmModal(true);
+  };
+  const confirmRemoveItem = () => {
+    if (!customerToRemove) return;
+    const updatedQueue = queueData.filter(
+      (item) => item.id !== customerToRemove.id
+    );
+    setQueueData(updatedQueue);
+    saveQueue(updatedQueue, selectedDate);
+    setShowRemoveConfirmModal(false);
+    setCustomerToRemove(null);
+  };
+
+  const cancelRemoveItem = () => {
+    setShowRemoveConfirmModal(false);
+    setCustomerToRemove(null);
+  };
+
   const columns = [
     {
       title: "Name",
@@ -219,13 +241,22 @@ const Queue = ({
       title: "Action",
       key: "action",
       render: (_, record) => (
-        <Button
-          type="primary"
-          onClick={() => openAppointModal(record)}
-          style={styles.appointButton}
-        >
-          Appoint Table
-        </Button>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <Button
+            type="primary"
+            onClick={() => openAppointModal(record)}
+            style={styles.appointButton}
+          >
+            Appoint Table
+          </Button>
+          <Button
+            type="danger"
+            onClick={() => handleRemoveFromQueue(record)}
+            style={styles.removeButton}
+          >
+            Remove
+          </Button>
+        </div>
       ),
     },
   ];
@@ -283,8 +314,7 @@ const Queue = ({
               rules={[
                 { required: true, message: "Please enter your mobile number" },
                 {
-                  pattern: /^[0-9]{10}$/,
-                  message: "Please enter a valid 10-digit mobile number",
+                  pattern: /^[0-9]{1}$/,
                 },
               ]}
             >
@@ -399,6 +429,21 @@ const Queue = ({
             </Form.Item>
           </Form>
         </Modal>
+
+        <Modal
+          title="Confirm Removal"
+          open={showRemoveConfirmModal}
+          onOk={confirmRemoveItem}
+          onCancel={cancelRemoveItem}
+          okText="Yes"
+          okButtonProps={{ danger: true }}
+          cancelText="No"
+        >
+          <p>
+            Are you sure you want to remove{" "}
+            <strong>{customerToRemove?.name}</strong> from the queue?
+          </p>
+        </Modal>
       </Card>
     </div>
   );
@@ -435,6 +480,11 @@ const styles = {
   },
   cancelButton: {
     marginLeft: "10px",
+  },
+  removeButton: {
+    backgroundColor: "#ff4d4f",
+    borderColor: "#ff4d4f",
+    color: "white",
   },
 };
 
