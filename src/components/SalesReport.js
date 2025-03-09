@@ -989,7 +989,7 @@ const SalesReport = ({
   const handleLoginSubmit = async (values) => {
     try {
       const { email, password } = values;
-      if (email === "hop@gmail.com" && password === "123456") {
+      if (email === "hop@gmail.com" && password === "hop@9090") {
         setIsAuthenticated(true);
         if (dropdownActionCustomer) {
           handleEditCustomer(dropdownActionCustomer);
@@ -1071,7 +1071,7 @@ const SalesReport = ({
                   }}
                 >
                   <Statistic
-                    title="Cash"
+                    title={<span style={{ fontSize: "18px" }}>Cash</span>} // Direct styling
                     value={cashRevenue.toFixed(2)}
                     prefix={<MoneyCollectOutlined />}
                     suffix="Rs"
@@ -1087,7 +1087,7 @@ const SalesReport = ({
                   }}
                 >
                   <Statistic
-                    title="Online"
+                    title={<span style={{ fontSize: "18px" }}>Online</span>} // Direct styling
                     value={onlineRevenue.toFixed(2)}
                     prefix={<MoneyCollectOutlined />}
                     suffix="Rs"
@@ -1103,7 +1103,7 @@ const SalesReport = ({
                   }}
                 >
                   <Statistic
-                    title="Balance Received"
+                    title={<span style={{ fontSize: "18px" }}>Balance Received</span>} // Direct styling
                     value={balanceReceived.toFixed(2)}
                     prefix={<MoneyCollectOutlined />}
                     suffix="Rs"
@@ -1119,7 +1119,7 @@ const SalesReport = ({
                   }}
                 >
                   <Statistic
-                    title="Total Sales"
+                    title={<span style={{ fontSize: "18px" }}>Total Sales</span>} // Direct styling
                     value={totalRevenue.toFixed(2)}
                     prefix={<MoneyCollectOutlined />}
                     suffix="Rs"
