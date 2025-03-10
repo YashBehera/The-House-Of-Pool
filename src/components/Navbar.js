@@ -181,7 +181,7 @@ const Navbar = ({
 
   const handleActionLoginSubmit = async (values) => {
     const { email, password } = values;
-    if (email === "hop@gmail.com" && password === "123456") {
+    if (email === "hop@gmail.com" && password === "hop@9090") {
       setIsActionAuthenticated(true);
       switch (dropdownAction) {
         case "inventory":
