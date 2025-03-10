@@ -7,7 +7,11 @@ import {
   Modal,
   Table,
   Select,
+  Avatar,
+  List,
+  Typography,
 } from "antd";
+import { ShoppingCartOutlined } from "@ant-design/icons";
 import "antd/dist/reset.css";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import {
@@ -34,6 +38,7 @@ import ps5 from "./PS2.png";
 import tennis from "./tt.jpg";
 import TURF from "./turf.png";
 
+const { Title, Text } = Typography;
 const POOL_RATE_PER_MIN = 2.5;
 const TURF_RATE_PER_HOUR = 1200;
 
@@ -132,6 +137,14 @@ const PoolBillingSystem = ({
   const [dropdownItems, setDropdownItems] = useState([]); // New state for dropdown working set
   const [formErrors, setFormErrors] = useState([]);
   const [editFormErrors, setEditFormErrors] = useState([]);
+  const [isViewFoodItemsModalOpen, setIsViewFoodItemsModalOpen] =
+    useState(false);
+  const [viewFoodItems, setViewFoodItems] = useState([]);
+
+  const handleViewFoodItems = (record) => {
+    setViewFoodItems(record.orderedItems || []);
+    setIsViewFoodItemsModalOpen(true);
+  };
 
   useEffect(() => {
     if (!isAuthenticated || !selectedLocation) return;
@@ -610,9 +623,7 @@ const PoolBillingSystem = ({
     const minutes = totalMinutes % 60;
     const durationString =
       hours > 0
-        ? `${hours} hr${
-            minutes > 0 ? ` ${minutes} min` : ""
-          }`
+        ? `${hours} hr${minutes > 0 ? ` ${minutes} min` : ""}`
         : `${minutes} min`;
 
     const totalItemCost = table.orderedItems.reduce(
@@ -641,10 +652,32 @@ const PoolBillingSystem = ({
     };
   };
 
+  const handleStartTimeChange = (e) => {
+    const newStartTime = e.target.value
+      ? new Date(e.target.value)
+      : editData.startTime || new Date();
+    setEditData((prev) => {
+      const { totalAmount, duration, durationString } = calculateTotalAmount(
+        { ...prev, startTime: newStartTime },
+        prev.endTime
+      );
+      editForm.setFieldsValue({ totalAmount });
+      return {
+        ...prev,
+        startTime: newStartTime,
+        totalAmount,
+        duration,
+        durationString,
+      };
+    });
+  };
+
   const startTable = (values) => {
     if (!selectedTable) return;
 
-    const startTime = new Date().toISOString();
+    const startTime = values.startTime
+      ? new Date(values.startTime).toISOString()
+      : new Date().toISOString(); // Fallback to current time if not provided
     let gameType = "Other";
 
     if (typeof selectedTable === "string") {
@@ -1114,16 +1147,19 @@ const PoolBillingSystem = ({
       const updatedTables = prevTables.map((t) => {
         if (t.id !== editData.id) return t;
 
+        const newStartTime = values.startTime
+          ? new Date(values.startTime)
+          : editData.startTime || new Date();
         const newEndTime = values.endTime
           ? new Date(values.endTime)
           : editData.endTime || new Date();
         const newDuration = Math.max(
-          Math.round((newEndTime - new Date(t.startTime)) / 60000),
+          Math.round((newEndTime - newStartTime) / 60000),
           0
         );
         const updatedOrderedItems = editData.orderedItems || t.orderedItems;
         const { totalAmount, duration, durationString } = calculateTotalAmount(
-          { ...t, orderedItems: updatedOrderedItems },
+          { ...t, orderedItems: updatedOrderedItems, startTime: newStartTime },
           newEndTime
         );
 
@@ -1148,6 +1184,7 @@ const PoolBillingSystem = ({
           ...t,
           name: values.name || t.name,
           phone: values.phone || t.phone,
+          startTime: newStartTime,
           endTime: newEndTime,
           duration,
           durationString,
@@ -1496,7 +1533,7 @@ const PoolBillingSystem = ({
                         style={{
                           position: "relative",
                           bottom: "70px",
-                          fontSize: "12px",
+                          fontSize: "14px",
                           color: "#666",
                           margin: 0,
                         }}
@@ -1587,7 +1624,7 @@ const PoolBillingSystem = ({
                         style={{
                           position: "relative",
                           bottom: "70px",
-                          fontSize: "12px",
+                          fontSize: "14px",
                           color: "#666",
                           margin: 0,
                         }}
@@ -2090,7 +2127,12 @@ const PoolBillingSystem = ({
               title: "Ordered Items",
               dataIndex: "orderedItems",
               key: "orderedItems",
-              render: (items) => (items?.length ? aggregateItems(items) : "—"),
+              render: (items, record) =>
+                record.name === "FOOD"
+                  ? "—"
+                  : items?.length
+                  ? aggregateItems(items)
+                  : "—",
               align: "center",
             },
             {
@@ -2150,6 +2192,12 @@ const PoolBillingSystem = ({
                         Add
                       </Button>
                     </Dropdown>
+                    <Button
+                      type="default"
+                      onClick={() => handleViewFoodItems(record)}
+                    >
+                      View
+                    </Button>
                   </div>
                 ) : record.isClosed ? (
                   <div
@@ -2230,6 +2278,9 @@ const PoolBillingSystem = ({
                   : reserveTurf
                 : startTable
             }
+            initialValues={{
+              startTime: moment().format("YYYY-MM-DDTHH:mm"), // Default to current time
+            }}
           >
             <Form.Item>
               <h3>Table: {selectedTable}</h3>
@@ -2298,11 +2349,22 @@ const PoolBillingSystem = ({
                 </Form.Item>
               </>
             ) : (
-              <Form.Item>
-                <Button type="primary" htmlType="submit">
-                  Start
-                </Button>
-              </Form.Item>
+              <>
+                <Form.Item
+                  name="startTime"
+                  label="Start Time"
+                  rules={[
+                    { required: true, message: "Please select start time" },
+                  ]}
+                >
+                  <Input type="datetime-local" />
+                </Form.Item>
+                <Form.Item>
+                  <Button type="primary" htmlType="submit">
+                    Start
+                  </Button>
+                </Form.Item>
+              </>
             )}
           </Form>
         </Modal>
@@ -2353,7 +2415,7 @@ const PoolBillingSystem = ({
           onCancel={() => {
             setIsEditModalOpen(false);
             editForm.resetFields();
-            setEditFormErrors([]); // Reset errors on cancel
+            setEditFormErrors([]);
           }}
           footer={null}
         >
@@ -2388,10 +2450,7 @@ const PoolBillingSystem = ({
               const online = parseFloat(values.onlineAmount) || 0;
               const total = parseFloat(values.totalAmount) || 0;
 
-              // Reset errors before validation
               setEditFormErrors([]);
-
-              // Validation after submission
               const errors = [];
               if (total > 0 && cash === 0 && online === 0) {
                 errors.push("Cash or Online must be greater than 0");
@@ -2406,13 +2465,11 @@ const PoolBillingSystem = ({
                 errors.push("Online amount cannot be negative");
               }
 
-              // If there are errors, display them and stop submission
               if (errors.length > 0) {
                 setEditFormErrors(errors);
                 return;
               }
 
-              // If validation passes, proceed with submission
               updateTable(values);
             }}
           >
@@ -2421,6 +2478,9 @@ const PoolBillingSystem = ({
             </Form.Item>
             <Form.Item name="phone" label="Phone Number">
               <Input />
+            </Form.Item>
+            <Form.Item name="startTime" label="Start Time">
+              <Input type="datetime-local" onChange={handleStartTimeChange} />
             </Form.Item>
             <Form.Item name="endTime" label="Closing Time">
               <Input type="datetime-local" onChange={handleEndTimeChange} />
@@ -2624,6 +2684,139 @@ const PoolBillingSystem = ({
               </>
             );
           })()}
+        </Modal>
+
+        <Modal
+          title={
+            <div
+              style={{
+                background: "linear-gradient(135deg, #1890ff, #40c4ff)",
+                padding: "12px 16px",
+                margin: "-16px -16px 16px -16px",
+                borderTopLeftRadius: "8px",
+                borderTopRightRadius: "8px",
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <ShoppingCartOutlined
+                style={{ fontSize: "22px", color: "#fff" }}
+              />
+              <Title
+                level={4}
+                style={{ color: "#fff", margin: 0, marginLeft: "12px" }}
+              >
+                FOOD Ordered Items
+              </Title>
+            </div>
+          }
+          open={isViewFoodItemsModalOpen}
+          onCancel={() => setIsViewFoodItemsModalOpen(false)}
+          footer={[
+            <Button
+              key="close"
+              type="primary"
+              style={{
+                background: "#52c41a",
+                borderColor: "#52c41a",
+                borderRadius: "6px",
+                padding: "6px 20px",
+                fontWeight: "bold",
+                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+              }}
+              onClick={() => setIsViewFoodItemsModalOpen(false)}
+            >
+              Close
+            </Button>,
+          ]}
+          width={600} // Increased width to accommodate table
+          bodyStyle={{
+            padding: "20px",
+            background: "#fff",
+            borderRadius: "0 0 8px 8px",
+            boxShadow: "inset 0 0 10px rgba(0, 0, 0, 0.05)",
+          }}
+        >
+          {viewFoodItems.length > 0 ? (
+            <div>
+              {/* Table for food items */}
+              <Table
+                dataSource={Object.entries(
+                  viewFoodItems.reduce((acc, item) => {
+                    acc[item] = (acc[item] || 0) + 1;
+                    return acc;
+                  }, {})
+                ).map(([item, quantity], index) => ({
+                  key: index,
+                  itemName: item,
+                  quantity: quantity,
+                  price: ITEM_PRICES[item] || 0,
+                  total: (ITEM_PRICES[item] || 0) * quantity,
+                }))}
+                columns={[
+                  {
+                    title: "Item Name",
+                    dataIndex: "itemName",
+                    key: "itemName",
+                  },
+                  {
+                    title: "Sold Quantity",
+                    dataIndex: "quantity",
+                    key: "quantity",
+                    align: "center",
+                  },
+                  {
+                    title: "Price (Rs)",
+                    dataIndex: "price",
+                    key: "price",
+                    align: "center",
+                    render: (price) => price.toFixed(2),
+                  },
+                  {
+                    title: "Total (Rs)",
+                    dataIndex: "total",
+                    key: "total",
+                    align: "center",
+                    render: (total) => total.toFixed(2),
+                  },
+                ]}
+                pagination={false}
+                size="small"
+                style={{ marginBottom: "16px" }}
+              />
+
+              {/* Total amount display */}
+              <div
+                style={{
+                  textAlign: "right",
+                  padding: "12px",
+                  background: "#f5f5f5",
+                  borderRadius: "6px",
+                  borderTop: "1px solid #e8e8e8",
+                }}
+              >
+                <Text strong style={{ fontSize: "16px", color: "#1890ff" }}>
+                  Total Amount: Rs{" "}
+                  {viewFoodItems
+                    .reduce((sum, item) => sum + (ITEM_PRICES[item] || 0), 0)
+                    .toFixed(2)}
+                </Text>
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "20px",
+                background: "#f5f5f5",
+                borderRadius: "6px",
+              }}
+            >
+              <Text type="secondary" style={{ fontSize: "16px" }}>
+                No items ordered yet
+              </Text>
+            </div>
+          )}
         </Modal>
 
         {isDropdownOpen && (
