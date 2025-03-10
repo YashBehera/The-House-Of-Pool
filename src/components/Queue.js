@@ -311,12 +311,7 @@ const Queue = ({
             <Form.Item
               name="mobile"
               label="Mobile Number"
-              rules={[
-                { required: true, message: "Please enter your mobile number" },
-                {
-                  pattern: /^[0-9]{1}$/,
-                },
-              ]}
+              rules={[{ required: true }]}
             >
               <Input placeholder="Enter your mobile number" />
             </Form.Item>
