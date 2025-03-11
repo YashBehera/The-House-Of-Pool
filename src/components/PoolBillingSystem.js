@@ -675,9 +675,17 @@ const PoolBillingSystem = ({
   const startTable = (values) => {
     if (!selectedTable) return;
 
-    const startTime = values.startTime
-      ? new Date(values.startTime).toISOString()
-      : new Date().toISOString(); // Fallback to current time if not provided
+    const now = moment(selectedDate || new Date()); // Use selectedDate if available, else today
+    const [hours, minutes] = values.startTime.split(":");
+    const startTime = now
+      .clone()
+      .set({
+        hour: parseInt(hours),
+        minute: parseInt(minutes),
+        second: 0,
+        millisecond: 0,
+      })
+      .toISOString();
     let gameType = "Other";
 
     if (typeof selectedTable === "string") {
@@ -1364,6 +1372,25 @@ const PoolBillingSystem = ({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isDropdownOpen]);
+
+  const calculateEditDuration = (startTime, currentEndTime) => {
+    if (!startTime) return "—";
+
+    const start = new Date(startTime);
+    const effectiveEndTime = currentEndTime
+      ? new Date(currentEndTime)
+      : new Date(); // Use current time if no endTime is set
+    const totalMinutes = Math.max(
+      Math.round((effectiveEndTime - start) / 60000),
+      0
+    );
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    return hours > 0
+      ? `${hours} hr${minutes > 0 ? ` ${minutes} min` : ""}`
+      : `${minutes} min`;
+  };
 
   useEffect(() => {
     if (isEditModalOpen && editData) {
@@ -2279,7 +2306,7 @@ const PoolBillingSystem = ({
                 : startTable
             }
             initialValues={{
-              startTime: moment().format("YYYY-MM-DDTHH:mm"), // Default to current time
+              startTime: moment().format("HH:mm"), // Default to current time (e.g., "14:30")
             }}
           >
             <Form.Item>
@@ -2357,7 +2384,7 @@ const PoolBillingSystem = ({
                     { required: true, message: "Please select start time" },
                   ]}
                 >
-                  <Input type="datetime-local" />
+                  <Input type="time" />
                 </Form.Item>
                 <Form.Item>
                   <Button type="primary" htmlType="submit">
@@ -2484,6 +2511,15 @@ const PoolBillingSystem = ({
             </Form.Item>
             <Form.Item name="endTime" label="Closing Time">
               <Input type="datetime-local" onChange={handleEndTimeChange} />
+            </Form.Item>
+            <Form.Item label="Duration">
+              <Input
+                value={calculateEditDuration(
+                  editForm.getFieldValue("startTime"),
+                  editData?.endTime
+                )}
+                disabled
+              />
             </Form.Item>
             <h3>Ordered Items</h3>
             {Object.entries(
@@ -2690,7 +2726,7 @@ const PoolBillingSystem = ({
           title={
             <div
               style={{
-                background: "linear-gradient(135deg, #1890ff, #40c4ff)",
+                background: "#001529",
                 padding: "12px 16px",
                 margin: "-16px -16px 16px -16px",
                 borderTopLeftRadius: "8px",
