@@ -9,7 +9,7 @@ import {
   Table,
   Typography,
 } from "antd";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore"; // Added getDoc
 import { db } from "./firebase";
 import Navbar from "./Navbar";
 import moment from "moment";
@@ -18,7 +18,6 @@ import { v4 as uuidv4 } from "uuid";
 const { Title } = Typography;
 const { Option } = Select;
 
-// Constants from PoolBillingSystem.js
 const LOCATIONS = {
   OLD_HOUSE: "Old House Of Pool",
   NEW_HOUSE: "New House Of Pool",
@@ -53,6 +52,7 @@ const Queue = ({
   );
   const [showRemoveConfirmModal, setShowRemoveConfirmModal] = useState(false);
   const [customerToRemove, setCustomerToRemove] = useState(null);
+  const [ITEM_PRICES, setITEM_PRICES] = useState({});
 
   const GAME_TYPES = [
     "Small Table",
@@ -62,7 +62,32 @@ const Queue = ({
     "PS5",
   ];
 
-  // Define all appointment options based on location
+  useEffect(() => {
+    if (!selectedLocation) return;
+
+    const docId =
+      selectedLocation === LOCATIONS.OLD_HOUSE
+        ? "oldHouseStock"
+        : "newHouseStock";
+    const unsubscribe = onSnapshot(
+      doc(db, "inventory", docId),
+      (docSnap) => {
+        const inventory = docSnap.exists() ? docSnap.data().data : {};
+        const prices = {};
+        Object.entries(inventory).forEach(([item, values]) => {
+          prices[item] = values.price || 0;
+        });
+        setITEM_PRICES(prices);
+      },
+      (error) => {
+        console.error("Error fetching inventory:", error);
+        setITEM_PRICES({});
+      }
+    );
+
+    return () => unsubscribe();
+  }, [selectedLocation]);
+
   const getAllAppointmentOptions = () => {
     if (selectedLocation === LOCATIONS.OLD_HOUSE) {
       return [
@@ -76,7 +101,6 @@ const Queue = ({
     return [];
   };
 
-  // Filter available options based on activeTables and location
   const getAvailableOptions = () => {
     const allOptions = getAllAppointmentOptions();
     const activeTableNames = activeTables
@@ -108,6 +132,33 @@ const Queue = ({
     });
   };
 
+  const updateInventory = async (foodItems) => {
+    const inventoryDocId =
+      selectedLocation === LOCATIONS.OLD_HOUSE
+        ? "oldHouseStock"
+        : "newHouseStock";
+    const inventoryRef = doc(db, "inventory", inventoryDocId);
+
+    // Fetch current inventory using getDoc
+    const docSnap = await getDoc(inventoryRef);
+    const currentInventory = docSnap.exists() ? docSnap.data().data : {};
+
+    // Update inventory based on selected food items
+    const updatedInventory = { ...currentInventory };
+    Object.entries(foodItems).forEach(([item, qty]) => {
+      if (updatedInventory[item]) {
+        updatedInventory[item].available = Math.max(
+          0,
+          updatedInventory[item].available - qty
+        );
+        updatedInventory[item].sold = (updatedInventory[item].sold || 0) + qty;
+      }
+    });
+
+    // Save updated inventory
+    await setDoc(inventoryRef, { data: updatedInventory });
+  };
+
   useEffect(() => {
     if (!selectedLocation || !selectedDate) return;
 
@@ -126,7 +177,7 @@ const Queue = ({
       }
     );
     return () => unsub();
-  }, [selectedLocation, selectedDate]); // Depend on selectedDate as well
+  }, [selectedLocation, selectedDate]);
 
   const handleAddQueue = (values) => {
     const newEntry = {
@@ -135,6 +186,7 @@ const Queue = ({
       mobile: values.mobile,
       gameTypes: values.gameTypes,
       timestamp: moment().format("YYYY-MM-DD HH:mm:ss"),
+      foodItems: {},
     };
     const updatedQueue = [...queueData, newEntry];
     setQueueData(updatedQueue);
@@ -143,24 +195,91 @@ const Queue = ({
     form.resetFields();
   };
 
-  const handleAppointTable = (values) => {
+  const handleIncreaseItem = (item) => {
     if (!selectedCustomer) return;
 
-    // Remove from queue
+    const updatedFoodItems = {
+      ...selectedCustomer.foodItems,
+      [item]: (selectedCustomer.foodItems?.[item] || 0) + 1,
+    };
+
+    const updatedQueue = queueData.map((customer) =>
+      customer.id === selectedCustomer.id
+        ? { ...customer, foodItems: updatedFoodItems }
+        : customer
+    );
+
+    setQueueData(updatedQueue);
+    saveQueue(updatedQueue, selectedDate);
+
+    setSelectedCustomer((prev) => ({
+      ...prev,
+      foodItems: updatedFoodItems,
+    }));
+  };
+
+  const handleDecreaseItem = (item) => {
+    if (!selectedCustomer) return;
+
+    const currentQty = selectedCustomer.foodItems?.[item] || 0;
+    const newQty = currentQty - 1;
+    const updatedFoodItems = { ...selectedCustomer.foodItems };
+
+    if (newQty <= 0) {
+      delete updatedFoodItems[item];
+    } else {
+      updatedFoodItems[item] = newQty;
+    }
+
+    const updatedQueue = queueData.map((customer) =>
+      customer.id === selectedCustomer.id
+        ? { ...customer, foodItems: updatedFoodItems }
+        : customer
+    );
+
+    setQueueData(updatedQueue);
+    saveQueue(updatedQueue, selectedDate);
+
+    setSelectedCustomer((prev) => ({
+      ...prev,
+      foodItems: updatedFoodItems,
+    }));
+  };
+
+  const handleAppointTable = async (values) => {
+    if (!selectedCustomer) return;
+
+    const now = moment(selectedDate);
+    const [hours, minutes] = values.startTime.split(":");
+    const startTime = now
+      .clone()
+      .set({
+        hour: parseInt(hours),
+        minute: parseInt(minutes),
+        second: 0,
+        millisecond: 0,
+      })
+      .toISOString();
+
+    const orderedItems = Object.entries(
+      selectedCustomer.foodItems || {}
+    ).flatMap(([item, qty]) => Array(qty).fill(item));
+
+    await updateInventory(selectedCustomer.foodItems || {});
+
     const updatedQueue = queueData.filter(
       (item) => item.id !== selectedCustomer.id
     );
     setQueueData(updatedQueue);
     saveQueue(updatedQueue, selectedDate);
 
-    // Add to active tables
     const newTableEntry = {
       id: uuidv4(),
       table: values.appointmentOption,
       name: selectedCustomer.name,
       phone: selectedCustomer.mobile,
-      startTime: new Date().toISOString(),
-      orderedItems: [],
+      startTime: startTime,
+      orderedItems: orderedItems,
       totalAmount: 0,
       gameType: values.appointmentOption.includes("Table")
         ? "Snooker Table"
@@ -190,13 +309,19 @@ const Queue = ({
     appointForm.setFieldsValue({
       name: record.name,
       mobile: record.mobile,
+      startTime: moment().format("HH:mm"),
     });
+  };
+
+  const handleCancelAppointModal = () => {
+    setShowAppointModal(false);
   };
 
   const handleRemoveFromQueue = (record) => {
     setCustomerToRemove(record);
     setShowRemoveConfirmModal(true);
   };
+
   const confirmRemoveItem = () => {
     if (!customerToRemove) return;
     const updatedQueue = queueData.filter(
@@ -238,6 +363,17 @@ const Queue = ({
       render: (timestamp) => moment(timestamp).format("DD MMM YYYY, hh:mm A"),
     },
     {
+      title: "Food Items",
+      dataIndex: "foodItems",
+      key: "foodItems",
+      render: (foodItems) =>
+        foodItems && Object.keys(foodItems).length > 0
+          ? Object.entries(foodItems)
+              .map(([item, qty]) => `${qty} ${item}`)
+              .join(", ")
+          : "—",
+    },
+    {
       title: "Action",
       key: "action",
       render: (_, record) => (
@@ -275,7 +411,6 @@ const Queue = ({
         <Title level={3} style={styles.title}>
           🎱 {selectedLocation} Waiting
         </Title>
-
         <Button
           type="primary"
           onClick={() => setShowAddModal(true)}
@@ -283,7 +418,6 @@ const Queue = ({
         >
           Join Queue
         </Button>
-
         <Table
           dataSource={queueData}
           columns={columns}
@@ -292,7 +426,6 @@ const Queue = ({
           pagination={false}
           style={styles.table}
         />
-
         <Modal
           title="Join the Queue"
           open={showAddModal}
@@ -307,15 +440,15 @@ const Queue = ({
             >
               <Input placeholder="Enter your name" />
             </Form.Item>
-
             <Form.Item
               name="mobile"
               label="Mobile Number"
-              rules={[{ required: true }]}
+              rules={[
+                { required: true, message: "Please enter your mobile number" },
+              ]}
             >
               <Input placeholder="Enter your mobile number" />
             </Form.Item>
-
             <Form.Item
               name="gameTypes"
               label="Game Types"
@@ -333,7 +466,7 @@ const Queue = ({
               >
                 {GAME_TYPES.filter((type) => {
                   if (selectedLocation === LOCATIONS.OLD_HOUSE) return true;
-                  return type !== "Table Tennis" && type !== "PS5"; // New House only has pool tables
+                  return type !== "Table Tennis" && type !== "PS5";
                 }).map((type) => (
                   <Option key={type} value={type}>
                     {type}
@@ -341,7 +474,6 @@ const Queue = ({
                 ))}
               </Select>
             </Form.Item>
-
             <Form.Item>
               <Button
                 type="primary"
@@ -359,15 +491,10 @@ const Queue = ({
             </Form.Item>
           </Form>
         </Modal>
-
         <Modal
           title="Appoint Table/Controller"
           open={showAppointModal}
-          onCancel={() => {
-            setShowAppointModal(false);
-            setSelectedCustomer(null);
-            appointForm.resetFields();
-          }}
+          onCancel={handleCancelAppointModal}
           footer={null}
         >
           <Form
@@ -378,11 +505,9 @@ const Queue = ({
             <Form.Item name="name" label="Name">
               <Input disabled />
             </Form.Item>
-
             <Form.Item name="mobile" label="Mobile Number">
               <Input disabled />
             </Form.Item>
-
             <Form.Item
               name="appointmentOption"
               label="Select Table/Controller"
@@ -402,7 +527,51 @@ const Queue = ({
                 )}
               </Select>
             </Form.Item>
-
+            <Form.Item
+              name="startTime"
+              label="Start Time"
+              rules={[
+                { required: true, message: "Please select a start time" },
+              ]}
+            >
+              <Input type="time" />
+            </Form.Item>
+            <Form.Item label="Food Items (Optional)">
+              <div style={{ maxHeight: "200px", overflowY: "auto" }}>
+                {Object.keys(ITEM_PRICES).map((item) => (
+                  <div
+                    key={item}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "8px 0",
+                      borderBottom: "1px solid #f0f0f0",
+                    }}
+                  >
+                    <span>
+                      {item} (Rs {ITEM_PRICES[item]})
+                    </span>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <Button
+                        size="small"
+                        onClick={() => handleDecreaseItem(item)}
+                        disabled={!selectedCustomer?.foodItems?.[item]}
+                      >
+                        ➖
+                      </Button>
+                      <span>{selectedCustomer?.foodItems?.[item] || 0}</span>
+                      <Button
+                        size="small"
+                        onClick={() => handleIncreaseItem(item)}
+                      >
+                        ➕
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Form.Item>
             <Form.Item>
               <Button
                 type="primary"
@@ -412,11 +581,7 @@ const Queue = ({
                 Appoint
               </Button>
               <Button
-                onClick={() => {
-                  setShowAppointModal(false);
-                  setSelectedCustomer(null);
-                  appointForm.resetFields();
-                }}
+                onClick={handleCancelAppointModal}
                 style={styles.cancelButton}
               >
                 Cancel
@@ -424,7 +589,6 @@ const Queue = ({
             </Form.Item>
           </Form>
         </Modal>
-
         <Modal
           title="Confirm Removal"
           open={showRemoveConfirmModal}
