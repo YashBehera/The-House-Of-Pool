@@ -1239,14 +1239,28 @@ const PoolBillingSystem = ({
     });
   };
 
-  const deleteTable = (id) => {
+  const deleteTable = async (id) => {
     console.log("Deleting Table with ID:", id);
-    setActiveTables((prevTables) => {
-      console.log("Before Delete:", prevTables);
-      const updatedTables = prevTables.filter((t) => t.id !== id);
-      console.log("After Delete:", updatedTables);
-      return updatedTables;
-    });
+
+    if (!isAuthenticated) {
+      console.warn("Cannot delete table: User not authenticated");
+      return;
+    }
+
+    try {
+      setActiveTables((prevTables) => {
+        console.log("Before Delete:", prevTables);
+        const updatedTables = prevTables.filter((t) => t.id !== id);
+        console.log("After Delete:", updatedTables);
+
+        // Persist the updated tables to Firestore
+        saveTables(selectedDate, updatedTables, selectedLocation);
+        return updatedTables;
+      });
+    } catch (error) {
+      console.error("Error deleting table from Firestore:", error);
+      alert("Failed to delete table. Please try again.");
+    }
   };
 
   useEffect(() => {
@@ -1293,7 +1307,7 @@ const PoolBillingSystem = ({
           const record = activeTables.find((t) => t.id === dropdownRecordId);
           if (record) handleEdit(record);
         } else if (dropdownAction === "delete") {
-          deleteTable(dropdownRecordId);
+          await deleteTable(dropdownRecordId);
         }
         setIsDropdownOpen(false);
         loginForm.resetFields();
