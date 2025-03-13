@@ -1467,6 +1467,14 @@ const PoolBillingSystem = ({
     },
   ];
 
+  useEffect(() => {
+    if (isModalOpen && selectedTable !== "Turf" && !isEditingTurf) {
+      form.setFieldsValue({
+        startTime: moment().format("HH:mm"), // Set to current time
+      });
+    }
+  }, [isModalOpen, selectedTable, form]);
+
   return (
     <div>
       <Navbar
@@ -1540,12 +1548,16 @@ const PoolBillingSystem = ({
                       <Button
                         type="primary"
                         onClick={() => {
-                          setSelectedTable(table);
-                          setIsModalOpen(true);
+                          const activeTable = sortedTables.find(
+                            (t) => t.table === table && !t.isClosed
+                          );
+                          if (activeTable) {
+                            handleEdit(activeTable); // Open edit modal for active table
+                          } else {
+                            setSelectedTable(table);
+                            setIsModalOpen(true); // Open start modal for inactive table
+                          }
                         }}
-                        disabled={sortedTables.some(
-                          (t) => t.table === table && !t.isClosed
-                        )}
                         style={{
                           backgroundColor: sortedTables.some(
                             (t) => t.table === table && !t.isClosed
@@ -1631,12 +1643,16 @@ const PoolBillingSystem = ({
                       <Button
                         type="primary"
                         onClick={() => {
-                          setSelectedTable(table);
-                          setIsModalOpen(true);
+                          const activeTable = sortedTables.find(
+                            (t) => t.table === table && !t.isClosed
+                          );
+                          if (activeTable) {
+                            handleEdit(activeTable); // Open edit modal for active table
+                          } else {
+                            setSelectedTable(table);
+                            setIsModalOpen(true); // Open start modal for inactive table
+                          }
                         }}
-                        disabled={sortedTables.some(
-                          (t) => t.table === table && !t.isClosed
-                        )}
                         style={{
                           backgroundColor: sortedTables.some(
                             (t) => t.table === table && !t.isClosed
@@ -1733,12 +1749,16 @@ const PoolBillingSystem = ({
                       <Button
                         type="primary"
                         onClick={() => {
-                          setSelectedTable(controller);
-                          setIsModalOpen(true);
+                          const activeTable = sortedTables.find(
+                            (t) => t.table === controller && !t.isClosed
+                          );
+                          if (activeTable) {
+                            handleEdit(activeTable); // Open edit modal for active table
+                          } else {
+                            setSelectedTable(controller);
+                            setIsModalOpen(true); // Open start modal for inactive table
+                          }
                         }}
-                        disabled={activeTables.some(
-                          (t) => t.table === controller && !t.isClosed
-                        )}
                         style={{
                           backgroundColor: activeTables.some(
                             (t) => t.table === controller && !t.isClosed
@@ -1828,12 +1848,16 @@ const PoolBillingSystem = ({
                           <Button
                             type="primary"
                             onClick={() => {
-                              setSelectedTable(tableTennis);
-                              setIsModalOpen(true);
+                              const activeTable = sortedTables.find(
+                                (t) => t.table === tableTennis && !t.isClosed
+                              );
+                              if (activeTable) {
+                                handleEdit(activeTable); // Open edit modal for active table
+                              } else {
+                                setSelectedTable(tableTennis);
+                                setIsModalOpen(true); // Open start modal for inactive table
+                              }
                             }}
-                            disabled={activeTables.some(
-                              (t) => t.table === tableTennis && !t.isClosed
-                            )}
                             style={{
                               backgroundColor: activeTables.some(
                                 (t) => t.table === tableTennis && !t.isClosed
@@ -2031,12 +2055,16 @@ const PoolBillingSystem = ({
                       <Button
                         type="primary"
                         onClick={() => {
-                          setSelectedTable(table);
-                          setIsModalOpen(true);
+                          const activeTable = sortedTables.find(
+                            (t) => t.table === table && !t.isClosed
+                          );
+                          if (activeTable) {
+                            handleEdit(activeTable); // Open edit modal for active table
+                          } else {
+                            setSelectedTable(table);
+                            setIsModalOpen(true); // Open start modal for inactive table
+                          }
                         }}
-                        disabled={activeTables.some(
-                          (t) => t.table === table && !t.isClosed
-                        )}
                         style={{
                           backgroundColor: activeTables.some(
                             (t) => t.table === table && !t.isClosed
@@ -2319,9 +2347,7 @@ const PoolBillingSystem = ({
                   : reserveTurf
                 : startTable
             }
-            initialValues={{
-              startTime: moment().format("HH:mm"), // Default to current time (e.g., "14:30")
-            }}
+            initialValues={{}}
           >
             <Form.Item>
               <h3>Table: {selectedTable}</h3>
