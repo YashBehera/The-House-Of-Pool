@@ -65,7 +65,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
               available: values.available,
               sold: values.sold,
               initial: values.initial || values.available,
-              price: values.price || DEFAULT_ITEM_PRICES[item] || 0, // Preserve price or default
+              price: values.price || DEFAULT_ITEM_PRICES[item] || 0,
             };
           });
           setInitialStock(initial);
@@ -94,7 +94,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
         initial: initialQty,
         available: initialQty,
         sold: 0,
-        price: DEFAULT_ITEM_PRICES[item], // Include price from ITEM_PRICES
+        price: DEFAULT_ITEM_PRICES[item],
       };
     });
 
@@ -139,15 +139,27 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
 
   const updateStock = async () => {
     const updatedStock = { ...newHouseStock };
+
     Object.entries(updateStockInput).forEach(([item, quantity]) => {
       if (updatedStock[item]) {
+        // Update both initial and available stock to the new quantity
+        updatedStock[item].initial = Math.max(0, quantity);
         updatedStock[item].available = Math.max(0, quantity);
-        // Preserve existing price
+        // Optionally reset sold to 0 if you want a full reset of tracking
+        // updatedStock[item].sold = 0; // Uncomment if desired
       }
     });
 
     await saveInventory(updatedStock);
     setNewHouseStock(updatedStock);
+    setInitialStock(
+      Object.fromEntries(
+        Object.entries(updatedStock).map(([item, values]) => [
+          item,
+          values.initial,
+        ])
+      )
+    );
     setShowUpdateStockModal(false);
   };
 
@@ -404,7 +416,9 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
                 type="number"
                 min="0"
                 value={
-                  updateStockInput[item] || newHouseStock[item]?.available || 0
+                  updateStockInput[item] !== undefined
+                    ? updateStockInput[item]
+                    : newHouseStock[item]?.initial || 0 // Show initial instead of available
                 }
                 onChange={(e) => handleUpdateStockChange(item, e.target.value)}
                 placeholder="Enter new quantity"
