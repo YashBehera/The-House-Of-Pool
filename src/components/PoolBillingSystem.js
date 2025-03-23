@@ -770,33 +770,54 @@ const PoolBillingSystem = ({
 
   const stopTable = (id) => {
     const tableToEdit = activeTables.find((t) => t.id === id);
-    if (!tableToEdit || tableToEdit.endTime) return;
+    if (!tableToEdit) return; // Allow updates even if endTime exists
 
-    const endTime = new Date();
+    const endTime = new Date(); // Time of the "Stop" click
     const { totalAmount, duration, durationString } = calculateTotalAmount(
       tableToEdit,
       endTime
     );
 
-    setEditData({
-      ...tableToEdit,
-      endTime,
-      totalAmount,
-      duration,
-      durationString,
-      isClosed: true,
+    // Update activeTables with the latest stop time data
+    setActiveTables((prevTables) => {
+      const updatedTables = prevTables.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              endTime, // Update endTime with each "Stop" click
+              totalAmount,
+              duration,
+              durationString,
+              // isClosed remains false until "Save Changes"
+            }
+          : t
+      );
+      saveTables(selectedDate, updatedTables, selectedLocation); // Persist to Firestore
+      return updatedTables;
     });
-    setSelectedPaymentOption(tableToEdit.paymentOption || "Paid");
-    setIsEditModalOpen(true);
 
-    const formattedEndTime = moment(endTime).format("YYYY-MM-DDTHH:mm");
-    editForm.setFieldsValue({
-      name: tableToEdit.name,
-      phone: tableToEdit.phone,
-      startTime: moment(tableToEdit.startTime).format("YYYY-MM-DDTHH:mm"),
-      endTime: formattedEndTime,
-      totalAmount,
-      advancePayment: tableToEdit.advancePayment || 0,
+    // Use the updated activeTables to set editData and populate the form
+    setActiveTables((prevTables) => {
+      const updatedTable = prevTables.find((t) => t.id === id);
+      setEditData({
+        ...updatedTable, // Use the freshly updated table from activeTables
+      });
+      setSelectedPaymentOption(updatedTable.paymentOption || "Paid");
+      setIsEditModalOpen(true);
+
+      const formattedEndTime = moment(updatedTable.endTime).format(
+        "YYYY-MM-DDTHH:mm"
+      );
+      editForm.setFieldsValue({
+        name: updatedTable.name,
+        phone: updatedTable.phone,
+        startTime: moment(updatedTable.startTime).format("YYYY-MM-DDTHH:mm"),
+        endTime: formattedEndTime, // Reflects the exact endTime from activeTables
+        totalAmount: updatedTable.totalAmount,
+        advancePayment: updatedTable.advancePayment || 0,
+      });
+
+      return prevTables; // No further changes needed
     });
   };
 
@@ -1157,14 +1178,10 @@ const PoolBillingSystem = ({
 
         const newStartTime = values.startTime
           ? new Date(values.startTime)
-          : editData.startTime || new Date();
+          : t.startTime || new Date(); // Use existing startTime if unchanged
         const newEndTime = values.endTime
           ? new Date(values.endTime)
-          : editData.endTime || new Date();
-        const newDuration = Math.max(
-          Math.round((newEndTime - newStartTime) / 60000),
-          0
-        );
+          : t.endTime || new Date(); // Use stopTable's endTime unless edited
         const updatedOrderedItems = editData.orderedItems || t.orderedItems;
         const { totalAmount, duration, durationString } = calculateTotalAmount(
           { ...t, orderedItems: updatedOrderedItems, startTime: newStartTime },
@@ -1193,7 +1210,7 @@ const PoolBillingSystem = ({
           name: values.name || t.name,
           phone: values.phone || t.phone,
           startTime: newStartTime,
-          endTime: newEndTime,
+          endTime: newEndTime, // Preserves "Stop" time unless changed in modal
           duration,
           durationString,
           orderedItems: updatedOrderedItems,
@@ -1201,7 +1218,7 @@ const PoolBillingSystem = ({
           cashAmount,
           onlineAmount,
           advancePayment,
-          isClosed: true,
+          isClosed: true, // Set to true on "Save Changes"
           dues: updatedDues > 0 ? updatedDues : 0,
           paymentOption: selectedPaymentOption,
         };
@@ -2176,9 +2193,9 @@ const PoolBillingSystem = ({
               title: "End Time",
               dataIndex: "endTime",
               key: "endTime",
-              render: (t) => (
+              render: (t, record) => (
                 <span style={{ whiteSpace: "nowrap" }}>
-                  {t ? moment(t).format("hh:mm A") : "—"}
+                  {record.isClosed && t ? moment(t).format("hh:mm A") : "—"}
                 </span>
               ),
               align: "center",
@@ -2187,8 +2204,10 @@ const PoolBillingSystem = ({
               title: "Duration",
               dataIndex: "durationString",
               key: "duration",
-              render: (d) => (
-                <span style={{ whiteSpace: "nowrap" }}>{d || "—"}</span>
+              render: (d, record) => (
+                <span style={{ whiteSpace: "nowrap" }}>
+                  {record.isClosed && d ? d : "—"}
+                </span>
               ),
               align: "center",
             },
@@ -2222,7 +2241,8 @@ const PoolBillingSystem = ({
               title: "Total Amount (Rs)",
               dataIndex: "totalAmount",
               key: "totalAmount",
-              render: (a) => (a ? Math.round(a) : "—"),
+              render: (a, record) =>
+                record.isClosed && a ? Math.round(a) : "—",
               align: "center",
             },
             {
