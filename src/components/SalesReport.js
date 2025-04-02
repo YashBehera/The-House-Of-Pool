@@ -27,6 +27,7 @@ import {
   addDoc,
   deleteDoc,
 } from "firebase/firestore";
+import { auth } from "./firebase";
 import moment from "moment";
 import "./sales.css";
 import React, { useEffect, useRef, useState } from "react";
@@ -81,6 +82,60 @@ const SalesReport = ({
   const [deleteExpenseRecord, setDeleteExpenseRecord] = useState(null);
   const [expenseForm] = Form.useForm();
   const [editExpenseForm] = Form.useForm();
+  const [userRole, setUserRole] = useState(null);
+  const [isActionAuthenticated, setIsActionAuthenticated] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      setIsAuthenticated(!!user);
+      if (user) {
+        const docRef = doc(db, "Users", user.uid);
+        try {
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            const userData = docSnap.data();
+            setUserRole(userData.role || "unknown");
+            setIsActionAuthenticated(userData.role === "admin"); // Admin has full access by default
+            if (userData.role === "restricted" && userData.location) {
+              setSelectedLocation(userData.location); // Pre-set location for restricted users
+            }
+          } else {
+            // Default user setup if no Firestore doc exists
+            const email = user.email;
+            if (email === "hop@gmail.com") {
+              setUserRole("admin");
+              setIsActionAuthenticated(true); // Admin has full access
+            } else if (
+              email === "oldhop@gmail.com" ||
+              email === "newhop@gmail.com"
+            ) {
+              setUserRole("restricted");
+              setIsActionAuthenticated(false); // Restricted users need to authenticate
+              setSelectedLocation(
+                email === "oldhop@gmail.com"
+                  ? "Old House Of Pool"
+                  : "New House Of Pool"
+              );
+            } else {
+              setUserRole("unknown");
+              setIsActionAuthenticated(false);
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching user data:", error.message);
+          setUserRole("unknown");
+          setIsActionAuthenticated(false);
+        }
+      } else {
+        setUserRole(null);
+        setIsActionAuthenticated(false);
+        console.log(
+          "User signed out. Firestore operations will be restricted."
+        );
+      }
+    });
+    return () => unsubscribe();
+  }, [setSelectedLocation]);
 
   useEffect(() => {
     const fetchExpenses = async () => {
@@ -887,14 +942,22 @@ const SalesReport = ({
             type="primary"
             onClick={() => {
               console.log(
-                "Edit button clicked, isAuthenticated:",
-                isAuthenticated
+                "Edit button clicked, userRole:",
+                userRole,
+                "isActionAuthenticated:",
+                isActionAuthenticated
               ); // Debug
-              if (isAuthenticated) {
+              if (!userRole) {
+                alert("Please log in to perform this action.");
+                return;
+              }
+              if (userRole === "admin" || isActionAuthenticated) {
                 handleEditCustomer(record);
-              } else {
+              } else if (userRole === "restricted") {
                 setDropdownActionCustomer(record);
                 setIsDropdownOpen(true);
+              } else {
+                alert("You do not have permission to perform this action.");
               }
             }}
           >
@@ -988,20 +1051,37 @@ const SalesReport = ({
 
   const handleLoginSubmit = async (values) => {
     try {
-      const { email, password } = values;
-      if (email === "hop@gmail.com" && password === "hop@9090") {
-        setIsAuthenticated(true);
+      const { password } = values;
+      const user = auth.currentUser;
+
+      if (!user) {
+        alert("No user is logged in.");
+        return;
+      }
+
+      const docRef = doc(db, "Users", user.uid);
+      const docSnap = await getDoc(docRef);
+      let adminPassword = "defaultAdminPassword"; // Fallback (set in Firestore ideally)
+
+      if (docSnap.exists() && docSnap.data().adminPassword) {
+        adminPassword = docSnap.data().adminPassword;
+      } else {
+        console.error("Admin password not found in Config/adminSettings");
+      }
+
+      if (password === adminPassword) {
+        setIsActionAuthenticated(true);
         if (dropdownActionCustomer) {
           handleEditCustomer(dropdownActionCustomer);
         }
         setIsDropdownOpen(false);
         loginForm.resetFields();
       } else {
-        alert("You do not have permission to access this feature.");
+        alert("Invalid admin password. Please try again.");
       }
     } catch (error) {
-      console.error("Login failed:", error);
-      alert("Invalid email or password. Please try again.");
+      console.error("Error during admin login:", error);
+      alert("An error occurred. Please try again.");
     }
   };
 
