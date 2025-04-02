@@ -2,7 +2,7 @@ import { Button, Select, Form, Input } from "antd";
 import { doc, getDoc } from "firebase/firestore";
 import React, { useEffect, useRef, useState } from "react";
 import { CgProfile } from "react-icons/cg";
-import { useNavigate, useLocation } from "react-router-dom"; // Add useLocation
+import { useNavigate, useLocation } from "react-router-dom";
 import logo1 from "./HOP3.png";
 import logo2 from "./HOP5.png";
 import Profile from "./Profile";
@@ -10,7 +10,6 @@ import { auth, db } from "./firebase";
 import { MenuOutlined } from "@ant-design/icons";
 import "./Navbar.css";
 import Login from "./Login";
-import { signInWithEmailAndPassword } from "firebase/auth";
 import logo from "./logo.png";
 import logohop from "./image.png";
 
@@ -19,20 +18,12 @@ const { Option } = Select;
 const Navbar = ({
   selectedDate,
   setSelectedDate,
-  isAuthenticated,
   selectedLocation,
   setSelectedLocation,
 }) => {
   const navigate = useNavigate();
-  const location = useLocation(); // Get current location
-  const [userDetails, setUserDetails] = useState(
-    auth.currentUser
-      ? {
-          email: auth.currentUser.email,
-          firstName: auth.currentUser.displayName || "User",
-        }
-      : null
-  );
+  const location = useLocation();
+  const [userDetails, setUserDetails] = useState(null);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isActionLoginOpen, setIsActionLoginOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -46,38 +37,45 @@ const Navbar = ({
   const [loginForm] = Form.useForm();
 
   useEffect(() => {
-    if (auth.currentUser) {
-      setIsProfileDropdownOpen(false);
-    }
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
       if (user) {
         const docRef = doc(db, "Users", user.uid);
         try {
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
-            setUserDetails(docSnap.data());
+            const userData = docSnap.data();
+            setUserDetails(userData);
+            setUserRole(userData.role || "unknown");
+            setIsActionAuthenticated(userData.role === "admin"); // Admin has full access by default
+            if (userData.role === "restricted" && userData.location) {
+              setSelectedLocation(userData.location); // Pre-set location for restricted users
+            }
           } else {
+            // Default user setup if no Firestore doc exists
+            const email = user.email;
             setUserDetails({
-              email: user.email,
+              email,
               firstName: user.displayName || "User",
             });
+            if (email === "hop@gmail.com") {
+              setUserRole("admin");
+              setIsActionAuthenticated(true);
+            } else if (
+              email === "oldhop@gmail.com" ||
+              email === "newhop@gmail.com"
+            ) {
+              setUserRole("restricted");
+              setIsActionAuthenticated(false);
+              setSelectedLocation(
+                email === "oldhop@gmail.com"
+                  ? "Old House Of Pool"
+                  : "New House Of Pool"
+              );
+            } else {
+              setUserRole("unknown");
+              setIsActionAuthenticated(false);
+            }
           }
-          if (user.email === "hop@gmail.com") {
-            setUserRole("full");
-            setIsActionAuthenticated(true);
-          } else if (user.email === "oldhop@gmail.com") {
-            setUserRole("restricted");
-            setIsActionAuthenticated(false);
-            setSelectedLocation("Old House Of Pool");
-          } else if (user.email === "newhop@gmail.com") {
-            setUserRole("restricted");
-            setIsActionAuthenticated(false);
-            setSelectedLocation("New House Of Pool");
-          } else {
-            setUserRole("unknown");
-            setIsActionAuthenticated(false);
-          }
-          setIsProfileDropdownOpen(false);
         } catch (error) {
           console.error("Error fetching user data:", error.message);
           setUserDetails({
@@ -86,7 +84,6 @@ const Navbar = ({
           });
           setUserRole("unknown");
           setIsActionAuthenticated(false);
-          setIsProfileDropdownOpen(false);
         }
       } else {
         setUserDetails(null);
@@ -132,16 +129,13 @@ const Navbar = ({
   const handleRestrictedAction = (action) => {
     if (!userRole) {
       setIsProfileDropdownOpen(true);
-    } else if (userRole === "full" || isActionAuthenticated) {
+    } else if (userRole === "admin" || isActionAuthenticated) {
       switch (action) {
         case "inventory":
           navigate(`/inventory?location=${selectedLocation}`);
           break;
         case "reports":
           navigate(`/reports?location=${selectedLocation}`);
-          break;
-        case "expenses":
-          navigate(`/expenses?location=${selectedLocation}`);
           break;
         default:
           break;
@@ -162,14 +156,13 @@ const Navbar = ({
   const handleLocationChange = (value) => {
     if (!userRole) {
       setIsProfileDropdownOpen(true);
-    } else if (userRole === "full" || isActionAuthenticated) {
+    } else if (userRole === "admin" || isActionAuthenticated) {
       setSelectedLocation(value);
       if (userRole === "restricted") {
-        setIsActionAuthenticated(false);
+        setIsActionAuthenticated(false); // Reset after action
       }
-      // For full access, navigate to the current route with the new location
-      if (userRole === "full") {
-        const currentPath = location.pathname; // e.g., "/reports", "/inventory"
+      if (userRole === "admin") {
+        const currentPath = location.pathname;
         navigate(`${currentPath}?location=${value}`);
       }
     } else if (userRole === "restricted") {
@@ -180,42 +173,50 @@ const Navbar = ({
   };
 
   const handleActionLoginSubmit = async (values) => {
-    const { email, password } = values;
-    if (email === "hop@gmail.com" && password === "hop@9090") {
-      setIsActionAuthenticated(true);
-      switch (dropdownAction) {
-        case "inventory":
-          navigate(
-            `/inventory?location=${pendingLocation || selectedLocation}`
-          );
-          break;
-        case "reports":
-          navigate(`/reports?location=${pendingLocation || selectedLocation}`);
-          break;
-        case "expenses":
-          navigate(`/expenses?location=${pendingLocation || selectedLocation}`);
-          break;
-        case "location":
-          if (pendingLocation) {
-            setSelectedLocation(pendingLocation);
-            setPendingLocation(null);
-            if (userRole === "restricted") {
-              setIsActionAuthenticated(false);
-            }
-            // Navigate to current route with new location for restricted users after authentication
-            const currentPath = location.pathname;
-            navigate(`${currentPath}?location=${pendingLocation}`);
-          }
-          break;
-        default:
-          break;
+    const { password } = values;
+    const user = auth.currentUser;
+
+    if (user) {
+      const docRef = doc(db, "Users", user.uid);
+      const docSnap = await getDoc(docRef);
+      let adminPassword = "defaultAdminPassword"; // Fallback (set in Firestore ideally)
+
+      if (docSnap.exists() && docSnap.data().adminPassword) {
+        adminPassword = docSnap.data().adminPassword;
       }
-      setIsActionLoginOpen(false);
-      loginForm.resetFields();
+
+      if (password === adminPassword) {
+        setIsActionAuthenticated(true);
+        switch (dropdownAction) {
+          case "inventory":
+            navigate(
+              `/inventory?location=${pendingLocation || selectedLocation}`
+            );
+            break;
+          case "reports":
+            navigate(
+              `/reports?location=${pendingLocation || selectedLocation}`
+            );
+            break;
+          case "location":
+            if (pendingLocation) {
+              setSelectedLocation(pendingLocation);
+              setPendingLocation(null);
+              setIsActionAuthenticated(false); // Reset after location change
+              const currentPath = location.pathname;
+              navigate(`${currentPath}?location=${pendingLocation}`);
+            }
+            break;
+          default:
+            break;
+        }
+        setIsActionLoginOpen(false);
+        loginForm.resetFields();
+      } else {
+        alert("Invalid admin password. Please try again.");
+      }
     } else {
-      alert(
-        "Invalid credentials for this action. Please use admin credentials."
-      );
+      alert("No user is logged in.");
     }
   };
 
@@ -282,19 +283,12 @@ const Navbar = ({
         >
           <span className="text-white">Reports</span>
         </Button>
-        {/* <Button
-          type="link"
-          className="text-white text-base hover:text-gray-300"
-          onClick={() => handleRestrictedAction("expenses")}
-        >
-          <span className="text-white">Expenses</span>
-        </Button> */}
         <Button
           type="link"
           className="text-white text-base hover:text-gray-300"
           onClick={() => navigate(`/queue?location=${getHomeLocation()}`)}
         >
-          <span className="text-white">Booking</span>
+          <span className="text-white">Waiting</span>
         </Button>
         {userRole !== "restricted" || isActionAuthenticated ? (
           <Select
@@ -317,7 +311,7 @@ const Navbar = ({
         )}
       </div>
 
-      {/* Profile/Login Dropdown (Existing) */}
+      {/* Profile/Login Dropdown */}
       <div className="flex items-center gap-4">
         <button onClick={toggleProfileDropdown} className="flex items-center">
           <div className="flex items-center justify-center text-lg md:text-2xl h-8 md:h-10 w-20 md:w-24 bg-white rounded-full">
@@ -372,7 +366,7 @@ const Navbar = ({
         />
       </div>
 
-      {/* Existing Profile/Login Dropdown */}
+      {/* Profile/Login Dropdown */}
       {isProfileDropdownOpen && (
         <>
           <div className="fixed inset-0 bg-black opacity-50 z-20" />
@@ -399,7 +393,7 @@ const Navbar = ({
         </>
       )}
 
-      {/* New Action Login Dropdown */}
+      {/* Action Login Dropdown with Admin Password */}
       {isActionLoginOpen && (
         <>
           <div className="overlay fixed top-0 left-0 w-full h-full bg-zinc-900 opacity-50 z-10"></div>
@@ -424,7 +418,7 @@ const Navbar = ({
                 <span className="text-3xl font-bold text-black text-center relative bottom-4">
                   The House Of Pool
                 </span>
-                <h3>Login to Access {dropdownAction}</h3>
+                <h3>Enter Admin Password to Access {dropdownAction}</h3>
               </div>
               <div>
                 <Form
@@ -433,26 +427,20 @@ const Navbar = ({
                   className="flex flex-col items-center justify-center"
                 >
                   <Form.Item
-                    name="email"
-                    label="Email"
-                    rules={[
-                      { required: true, message: "Please enter your email" },
-                    ]}
-                  >
-                    <Input type="email" />
-                  </Form.Item>
-                  <Form.Item
                     name="password"
-                    label="Password"
+                    label="Admin Password"
                     rules={[
-                      { required: true, message: "Please enter your password" },
+                      {
+                        required: true,
+                        message: "Please enter the admin password",
+                      },
                     ]}
                   >
                     <Input.Password />
                   </Form.Item>
                   <Form.Item>
                     <Button type="primary" htmlType="submit">
-                      Login
+                      Submit
                     </Button>
                   </Form.Item>
                 </Form>
