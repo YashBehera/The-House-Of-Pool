@@ -13,7 +13,6 @@ import {
 } from "antd";
 import { ShoppingCartOutlined } from "@ant-design/icons";
 import "antd/dist/reset.css";
-import { signInWithEmailAndPassword } from "firebase/auth";
 import {
   doc,
   getDoc,
@@ -140,6 +139,8 @@ const PoolBillingSystem = ({
   const [isViewFoodItemsModalOpen, setIsViewFoodItemsModalOpen] =
     useState(false);
   const [viewFoodItems, setViewFoodItems] = useState([]);
+  const [userRole, setUserRole] = useState(null);
+  const [isActionAuthenticated, setIsActionAuthenticated] = useState(false);
 
   const handleViewFoodItems = (record) => {
     setViewFoodItems(record.orderedItems || []);
@@ -290,16 +291,56 @@ const PoolBillingSystem = ({
   }, [turfReservations, selectedDate, selectedLocation, isAuthenticated]);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
       setIsAuthenticated(!!user);
-      if (!user)
+      if (user) {
+        const docRef = doc(db, "Users", user.uid);
+        try {
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            const userData = docSnap.data();
+            setUserRole(userData.role || "unknown");
+            setIsActionAuthenticated(userData.role === "admin"); // Admin has full access by default
+            if (userData.role === "restricted" && userData.location) {
+              setSelectedLocation(userData.location); // Pre-set location for restricted users
+            }
+          } else {
+            // Default user setup if no Firestore doc exists
+            const email = user.email;
+            if (email === "hop@gmail.com") {
+              setUserRole("admin");
+              setIsActionAuthenticated(true); // Admin has full access
+            } else if (
+              email === "oldhop@gmail.com" ||
+              email === "newhop@gmail.com"
+            ) {
+              setUserRole("restricted");
+              setIsActionAuthenticated(false); // Restricted users need to authenticate
+              setSelectedLocation(
+                email === "oldhop@gmail.com"
+                  ? "Old House Of Pool"
+                  : "New House Of Pool"
+              );
+            } else {
+              setUserRole("unknown");
+              setIsActionAuthenticated(false);
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching user data:", error.message);
+          setUserRole("unknown");
+          setIsActionAuthenticated(false);
+        }
+      } else {
+        setUserRole(null);
+        setIsActionAuthenticated(false);
         console.log(
           "User signed out. Firestore operations will be restricted."
         );
-      else console.log("User authenticated:", user.uid);
+      }
     });
     return () => unsubscribe();
-  }, []);
+  }, [setSelectedLocation]);
 
   useEffect(() => {
     let unsubscribe = () => {};
@@ -1311,15 +1352,51 @@ const PoolBillingSystem = ({
   }, [selectedLocation]);
 
   const showDropdown = (action, id) => {
-    setDropdownAction(action);
-    setDropdownRecordId(id);
-    setIsDropdownOpen(true);
+    if (!userRole) {
+      alert("Please log in to perform this action.");
+      return;
+    }
+
+    if (userRole === "admin" || isActionAuthenticated) {
+      // Admin or authenticated restricted user can perform the action directly
+      if (action === "edit") {
+        const record = activeTables.find((t) => t.id === id);
+        if (record) handleEdit(record);
+      } else if (action === "delete") {
+        deleteTable(id);
+      }
+    } else if (userRole === "restricted") {
+      // Restricted user needs to authenticate
+      setDropdownAction(action);
+      setDropdownRecordId(id);
+      setIsDropdownOpen(true);
+    } else {
+      alert("You do not have permission to perform this action.");
+    }
   };
 
   const handleLoginSubmit = async (values) => {
     try {
-      const { email, password } = values;
-      if (email === "hop@gmail.com" && password === "hop@9090") {
+      const { password } = values;
+      const user = auth.currentUser;
+
+      if (!user) {
+        alert("No user is logged in.");
+        return;
+      }
+
+      const docRef = doc(db, "Users", user.uid);
+      const docSnap = await getDoc(docRef);
+      let adminPassword = "defaultAdminPassword"; // Fallback (set in Firestore ideally)
+
+      if (docSnap.exists() && docSnap.data().adminPassword) {
+        adminPassword = docSnap.data().adminPassword;
+      } else {
+        console.error("Admin password not found !");
+      }
+
+      if (password === adminPassword) {
+        setIsActionAuthenticated(true);
         if (dropdownAction === "edit") {
           const record = activeTables.find((t) => t.id === dropdownRecordId);
           if (record) handleEdit(record);
@@ -1329,11 +1406,11 @@ const PoolBillingSystem = ({
         setIsDropdownOpen(false);
         loginForm.resetFields();
       } else {
-        alert("You do not have permission to access this feature.");
+        alert("Invalid admin password. Please try again.");
       }
     } catch (error) {
-      console.error("Login failed:", error);
-      alert("Invalid email or password. Please try again.");
+      console.error("Error during admin login:", error);
+      alert("An error occurred. Please try again.");
     }
   };
 
@@ -2940,7 +3017,8 @@ const PoolBillingSystem = ({
                     The House Of Pool
                   </span>
                   <h3>
-                    Login to {dropdownAction === "edit" ? "Edit" : "Delete"}
+                    Enter Admin Password to{" "}
+                    {dropdownAction === "edit" ? "Edit" : "Delete"}
                   </h3>
                 </div>
                 <div>
@@ -2950,21 +3028,12 @@ const PoolBillingSystem = ({
                     className="flex flex-col items-center justify-center"
                   >
                     <Form.Item
-                      name="email"
-                      label="Email"
-                      rules={[
-                        { required: true, message: "Please enter your email" },
-                      ]}
-                    >
-                      <Input type="email" />
-                    </Form.Item>
-                    <Form.Item
                       name="password"
-                      label="Password"
+                      label="Admin Password"
                       rules={[
                         {
                           required: true,
-                          message: "Please enter your password",
+                          message: "Please enter the admin password",
                         },
                       ]}
                     >
