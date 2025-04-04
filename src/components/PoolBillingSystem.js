@@ -23,6 +23,9 @@ import {
   updateDoc,
   query,
   where,
+  limit,
+  orderBy,
+  deleteDoc,
 } from "firebase/firestore";
 import moment from "moment";
 import React, { useEffect, useRef, useState } from "react";
@@ -141,6 +144,46 @@ const PoolBillingSystem = ({
   const [viewFoodItems, setViewFoodItems] = useState([]);
   const [userRole, setUserRole] = useState(null);
   const [isActionAuthenticated, setIsActionAuthenticated] = useState(false);
+  const [monthlyTableCount, setMonthlyTableCount] = useState(0);
+
+  useEffect(() => {
+    const fetchMonthlyTableCount = async () => {
+      if (!isAuthenticated || !selectedLocation) return;
+
+      const startOfMonth = moment(selectedDate)
+        .startOf("month")
+        .format("YYYY-MM-DD");
+      const previousDay = moment(selectedDate)
+        .subtract(1, "day")
+        .endOf("day")
+        .toDate();
+      const tablesCollection = collection(db, "tables");
+      const q = query(
+        tablesCollection,
+        where("location", "==", selectedLocation),
+        where("startTime", ">=", new Date(`${startOfMonth}T00:00:00Z`)),
+        where("startTime", "<=", previousDay),
+        orderBy("startTime")
+      );
+
+      try {
+        const querySnapshot = await getDocs(q);
+        let totalTablesUpToYesterday = 0;
+        querySnapshot.forEach((doc) => {
+          const tableData = doc.data().data || [];
+          totalTablesUpToYesterday += tableData.filter(
+            (t) => t.name !== "FOOD"
+          ).length;
+        });
+        setMonthlyTableCount(totalTablesUpToYesterday);
+      } catch (error) {
+        console.error("Error fetching monthly table count:", error);
+        setMonthlyTableCount(0);
+      }
+    };
+
+    fetchMonthlyTableCount();
+  }, [selectedDate, selectedLocation, isAuthenticated]);
 
   const handleViewFoodItems = (record) => {
     setViewFoodItems(record.orderedItems || []);
@@ -193,23 +236,6 @@ const PoolBillingSystem = ({
     const endTime = moment(values.endTime);
     const advancePayment = parseFloat(values.advancePayment) || 0;
 
-    // Validate time slot (exclude the current reservation being edited)
-    const isSlotTaken = turfReservations.some((res) => {
-      if (res.id === editingReservationId) return false; // Skip the current reservation
-      const resStart = moment(res.startTime);
-      const resEnd = moment(res.endTime);
-      return (
-        startTime.isBetween(resStart, resEnd, null, "[]") ||
-        endTime.isBetween(resStart, resEnd, null, "[]") ||
-        (startTime.isBefore(resStart) && endTime.isAfter(resEnd))
-      );
-    });
-
-    if (isSlotTaken) {
-      alert("This time slot is already reserved. Please choose another time.");
-      return;
-    }
-
     const updatedReservation = {
       ...turfReservations.find((res) => res.id === editingReservationId),
       name: values.name,
@@ -247,48 +273,18 @@ const PoolBillingSystem = ({
     fetchTurfReservations();
   }, [selectedLocation, isAuthenticated]);
 
-  // Check and move turf reservations to activeTables when start time hits
-  useEffect(() => {
+  const removeTurfReservation = async (reservationId) => {
     if (!isAuthenticated) return;
-
-    const checkTurfReservations = () => {
-      const now = moment();
-      const readyReservations = turfReservations.filter(
-        (res) => moment(res.startTime).isSameOrBefore(now) && !res.isActive
-      );
-
-      if (readyReservations.length > 0) {
-        setActiveTables((prevTables) => {
-          const updatedTables = [...prevTables];
-          readyReservations.forEach((res) => {
-            if (!updatedTables.some((t) => t.id === res.id)) {
-              updatedTables.push({
-                ...res,
-                isClosed: false,
-                cashAmount: 0,
-                onlineAmount: 0,
-                orderedItems: [],
-              });
-            }
-          });
-          saveTables(selectedDate, updatedTables, selectedLocation);
-          return updatedTables;
-        });
-
-        // Mark reservations as active in Firestore
-        readyReservations.forEach(async (res) => {
-          await updateDoc(doc(db, "turfReservations", res.id), {
-            isActive: true,
-          });
-        });
-        fetchTurfReservations(); // Refresh reservations
-      }
-    };
-
-    const interval = setInterval(checkTurfReservations, 60000); // Check every minute
-    checkTurfReservations(); // Initial check
-    return () => clearInterval(interval);
-  }, [turfReservations, selectedDate, selectedLocation, isAuthenticated]);
+    try {
+      // Use deleteDoc for hard delete instead of soft delete
+      await deleteDoc(doc(db, "turfReservations", reservationId));
+      console.log(`Reservation ${reservationId} deleted successfully`);
+      await fetchTurfReservations(); // Refresh the reservations list
+    } catch (error) {
+      console.error("Error removing turf reservation:", error);
+      alert("Failed to remove reservation: " + error.message);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -362,52 +358,6 @@ const PoolBillingSystem = ({
     }
     return () => unsubscribe();
   }, [isAuthenticated]);
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-
-    const checkTurfReservations = async () => {
-      const now = moment();
-      const readyReservations = turfReservations.filter(
-        (res) => moment(res.startTime).isSameOrBefore(now) && !res.isActive
-      );
-
-      if (readyReservations.length > 0) {
-        // Update activeTables locally and persist to Firestore
-        setActiveTables((prevTables) => {
-          const updatedTables = [...prevTables];
-          readyReservations.forEach((res) => {
-            if (!updatedTables.some((t) => t.id === res.id)) {
-              updatedTables.push({
-                ...res,
-                isClosed: false,
-                cashAmount: 0,
-                onlineAmount: 0,
-                orderedItems: [],
-              });
-            }
-          });
-          // Save to Firestore immediately
-          saveTables(selectedDate, updatedTables, selectedLocation);
-          return updatedTables;
-        });
-
-        // Mark reservations as active in Firestore
-        await Promise.all(
-          readyReservations.map((res) =>
-            updateDoc(doc(db, "turfReservations", res.id), { isActive: true })
-          )
-        );
-
-        // Refresh reservations to ensure UI consistency
-        await fetchTurfReservations();
-      }
-    };
-
-    const interval = setInterval(checkTurfReservations, 60000); // Check every minute
-    checkTurfReservations(); // Initial check
-    return () => clearInterval(interval);
-  }, [turfReservations, selectedDate, selectedLocation, isAuthenticated]);
 
   const addRegularCustomer = async (values) => {
     if (!isAuthenticated) {
@@ -667,7 +617,7 @@ const PoolBillingSystem = ({
         ? `${hours} hr${minutes > 0 ? ` ${minutes} min` : ""}`
         : `${minutes} min`;
 
-    const totalItemCost = table.orderedItems.reduce(
+    const totalItemCost = (table.orderedItems || []).reduce(
       (sum, item) => sum + ITEM_PRICES[item],
       0
     );
@@ -774,35 +724,25 @@ const PoolBillingSystem = ({
     const endTime = moment(values.endTime);
     const advancePayment = parseFloat(values.advancePayment) || 0;
 
-    // Validate time slot
-    const isSlotTaken = turfReservations.some((res) => {
-      const resStart = moment(res.startTime);
-      const resEnd = moment(res.endTime);
-      return (
-        startTime.isBetween(resStart, resEnd, null, "[]") ||
-        endTime.isBetween(resStart, resEnd, null, "[]") ||
-        (startTime.isBefore(resStart) && endTime.isAfter(resEnd))
-      );
-    });
-
-    if (isSlotTaken) {
-      alert("This time slot is already reserved. Please choose another time.");
-      return;
-    }
-
     const reservation = {
       id: uuidv4(),
       table: selectedTable,
       name: values.name,
       phone: values.phone,
-      startTime: startTime.toDate(),
-      endTime: endTime.toDate(),
+      startTime: startTime,
+      endTime: endTime,
       advancePayment,
       gameType: "Turf",
       isClosed: false,
       location: selectedLocation,
       isActive: false,
     };
+
+    setActiveTables((prevTables) => {
+      const updatedTables = [...prevTables, reservation];
+      saveTables(selectedDate, updatedTables, selectedLocation);
+      return updatedTables;
+    });
 
     await saveTurfReservation(reservation);
     setIsModalOpen(false);
@@ -811,37 +751,34 @@ const PoolBillingSystem = ({
 
   const stopTable = (id) => {
     const tableToEdit = activeTables.find((t) => t.id === id);
-    if (!tableToEdit) return; // Allow updates even if endTime exists
+    if (!tableToEdit) return;
 
-    const endTime = new Date(); // Time of the "Stop" click
+    const endTime = new Date();
     const { totalAmount, duration, durationString } = calculateTotalAmount(
       tableToEdit,
       endTime
     );
 
-    // Update activeTables with the latest stop time data
     setActiveTables((prevTables) => {
       const updatedTables = prevTables.map((t) =>
         t.id === id
           ? {
               ...t,
-              endTime, // Update endTime with each "Stop" click
+              endTime,
               totalAmount,
               duration,
               durationString,
-              // isClosed remains false until "Save Changes"
             }
           : t
       );
-      saveTables(selectedDate, updatedTables, selectedLocation); // Persist to Firestore
+      saveTables(selectedDate, updatedTables, selectedLocation);
       return updatedTables;
     });
 
-    // Use the updated activeTables to set editData and populate the form
     setActiveTables((prevTables) => {
       const updatedTable = prevTables.find((t) => t.id === id);
       setEditData({
-        ...updatedTable, // Use the freshly updated table from activeTables
+        ...updatedTable,
       });
       setSelectedPaymentOption(updatedTable.paymentOption || "Paid");
       setIsEditModalOpen(true);
@@ -853,12 +790,14 @@ const PoolBillingSystem = ({
         name: updatedTable.name,
         phone: updatedTable.phone,
         startTime: moment(updatedTable.startTime).format("YYYY-MM-DDTHH:mm"),
-        endTime: formattedEndTime, // Reflects the exact endTime from activeTables
+        endTime: formattedEndTime,
         totalAmount: updatedTable.totalAmount,
         advancePayment: updatedTable.advancePayment || 0,
+        cashAmount: Math.round(updatedTable.cashAmount || 0), // Round to integer
+        onlineAmount: Math.round(updatedTable.onlineAmount || 0), // Round to integer
       });
 
-      return prevTables; // No further changes needed
+      return prevTables;
     });
   };
 
@@ -1219,18 +1158,19 @@ const PoolBillingSystem = ({
 
         const newStartTime = values.startTime
           ? new Date(values.startTime)
-          : t.startTime || new Date(); // Use existing startTime if unchanged
+          : t.startTime || new Date();
         const newEndTime = values.endTime
           ? new Date(values.endTime)
-          : t.endTime || new Date(); // Use stopTable's endTime unless edited
+          : t.endTime || new Date();
         const updatedOrderedItems = editData.orderedItems || t.orderedItems;
         const { totalAmount, duration, durationString } = calculateTotalAmount(
           { ...t, orderedItems: updatedOrderedItems, startTime: newStartTime },
           newEndTime
         );
 
-        const cashAmount = parseFloat(values.cashAmount) || 0;
-        const onlineAmount = parseFloat(values.onlineAmount) || 0;
+        // Ensure cashAmount and onlineAmount are integers
+        const cashAmount = Math.round(parseFloat(values.cashAmount) || 0);
+        const onlineAmount = Math.round(parseFloat(values.onlineAmount) || 0);
         const advancePayment = t.advancePayment || 0;
         let updatedDues = 0;
 
@@ -1251,7 +1191,7 @@ const PoolBillingSystem = ({
           name: values.name || t.name,
           phone: values.phone || t.phone,
           startTime: newStartTime,
-          endTime: newEndTime, // Preserves "Stop" time unless changed in modal
+          endTime: newEndTime,
           duration,
           durationString,
           orderedItems: updatedOrderedItems,
@@ -1259,7 +1199,7 @@ const PoolBillingSystem = ({
           cashAmount,
           onlineAmount,
           advancePayment,
-          isClosed: true, // Set to true on "Save Changes"
+          isClosed: true,
           dues: updatedDues > 0 ? updatedDues : 0,
           paymentOption: selectedPaymentOption,
         };
@@ -1291,8 +1231,8 @@ const PoolBillingSystem = ({
       startTime: formattedStartTime,
       endTime: formattedEndTime,
       totalAmount: record.totalAmount,
-      cashAmount: record.cashAmount || 0,
-      onlineAmount: record.onlineAmount || 0,
+      cashAmount: Math.round(record.cashAmount || 0), // Round to integer
+      onlineAmount: Math.round(record.onlineAmount || 0), // Round to integer
       advancePayment: record.advancePayment || 0,
     });
   };
@@ -1554,9 +1494,18 @@ const PoolBillingSystem = ({
       title: "Actions",
       key: "actions",
       render: (_, record) => (
-        <Button type="link" onClick={() => editTurfReservation(record)}>
-          Edit
-        </Button>
+        <div style={{ display: "flex", gap: "0 px" }}>
+          <Button type="link" onClick={() => editTurfReservation(record)}>
+            Edit
+          </Button>
+          <Button
+            type="link"
+            danger
+            onClick={() => removeTurfReservation(record.id)}
+          >
+            Remove
+          </Button>
+        </div>
       ),
     },
   ];
@@ -2217,6 +2166,34 @@ const PoolBillingSystem = ({
           rowKey="id"
           columns={[
             {
+              title: "S.No.",
+              key: "serialNumber",
+              render: (_, record, index) => {
+                // Exclude "FOOD" row from serial numbering
+                if (record.name === "FOOD") return "-";
+
+                // Filter current day's tables (excluding "FOOD") and sort by startTime
+                const todaysTables = sortedTables
+                  .filter(
+                    (t) =>
+                      t.name !== "FOOD" &&
+                      moment(t.startTime).isSame(moment(selectedDate), "day")
+                  )
+                  .sort(
+                    (a, b) => new Date(a.startTime) - new Date(b.startTime)
+                  );
+
+                // Find the index of the current record in today's tables
+                const tableIndex = todaysTables.indexOf(record);
+
+                // Serial number is the total up to yesterday plus today's index (starting from 1)
+                return tableIndex === -1
+                  ? "-"
+                  : monthlyTableCount + tableIndex + 1;
+              },
+              align: "center",
+            },
+            {
               title: "Table No.",
               dataIndex: "table",
               key: "table",
@@ -2610,9 +2587,10 @@ const PoolBillingSystem = ({
           <Form
             form={editForm}
             onFinish={(values) => {
-              const cash = parseFloat(values.cashAmount) || 0;
-              const online = parseFloat(values.onlineAmount) || 0;
-              const total = parseFloat(values.totalAmount) || 0;
+              // Round cash and online amounts to integers
+              const cash = Math.round(parseFloat(values.cashAmount) || 0);
+              const online = Math.round(parseFloat(values.onlineAmount) || 0);
+              const total = Math.round(parseFloat(values.totalAmount) || 0);
 
               setEditFormErrors([]);
               const errors = [];
@@ -2634,7 +2612,11 @@ const PoolBillingSystem = ({
                 return;
               }
 
-              updateTable(values);
+              updateTable({
+                ...values,
+                cashAmount: cash,
+                onlineAmount: online,
+              });
             }}
           >
             <Form.Item name="name" label="Customer Name">
@@ -2716,16 +2698,26 @@ const PoolBillingSystem = ({
               label="Online Amount (Rs)"
               rules={[
                 { required: true, message: "Please enter online amount" },
+                {
+                  pattern: /^[0-9]+$/,
+                  message: "Online amount must be a whole number",
+                },
               ]}
             >
-              <Input type="number" min={0} step="0.01" />
+              <Input type="number" min={0} step="1" />
             </Form.Item>
             <Form.Item
               name="cashAmount"
               label="Cash Amount (Rs)"
-              rules={[{ required: true, message: "Please enter cash amount" }]}
+              rules={[
+                { required: true, message: "Please enter cash amount" },
+                {
+                  pattern: /^[0-9]+$/,
+                  message: "Cash amount must be a whole number",
+                },
+              ]}
             >
-              <Input type="number" min={0} step="0.01" />
+              <Input type="number" min={0} step="1" />
             </Form.Item>
             <Form.Item label="Payment Option">
               <Select
@@ -2747,116 +2739,6 @@ const PoolBillingSystem = ({
               </Button>
             </Form.Item>
           </Form>
-        </Modal>
-
-        <Modal
-          title="Add Payment for FOOD Ordered Items"
-          open={isFoodPaymentModalOpen}
-          onCancel={() => {
-            setIsFoodPaymentModalOpen(false);
-            foodPaymentForm.resetFields();
-            setFoodTableId(null);
-            setFormErrors([]); // Reset errors on cancel
-          }}
-          footer={null}
-        >
-          {/* State to hold errors */}
-          {(() => {
-            return (
-              <>
-                {/* Error Display */}
-                {formErrors.length > 0 && (
-                  <div
-                    style={{
-                      backgroundColor: "#fff1f0",
-                      border: "1px solid #ffa39e",
-                      borderRadius: "4px",
-                      padding: "10px",
-                      marginBottom: "16px",
-                      color: "#cf1322",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <span style={{ fontSize: "16px" }}>⚠️</span>
-                    <div>
-                      {formErrors.map((error, index) => (
-                        <div key={index}>{error}</div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <Form
-                  form={foodPaymentForm}
-                  onFinish={(values) => {
-                    const cash = parseFloat(values.cashAmount) || 0;
-                    const online = parseFloat(values.onlineAmount) || 0;
-                    const total = parseFloat(values.totalPayment) || 0;
-
-                    // Reset errors before validation
-                    setFormErrors([]);
-
-                    // Validation after submission
-                    const errors = [];
-                    if (total > 0 && cash === 0 && online === 0) {
-                      errors.push("Cash or Online must be greater than 0");
-                    }
-                    if (cash + online !== total) {
-                      errors.push("Cash + Online must equal Total Amount");
-                    }
-                    if (cash < 0) {
-                      errors.push("Cash amount cannot be negative");
-                    }
-                    if (online < 0) {
-                      errors.push("Online amount cannot be negative");
-                    }
-
-                    // If there are errors, display them and stop submission
-                    if (errors.length > 0) {
-                      setFormErrors(errors);
-                      return;
-                    }
-
-                    // If validation passes, proceed with submission
-                    handleFoodPaymentSubmit(values);
-                  }}
-                  layout="vertical"
-                >
-                  <Form.Item label="Ordered Items">
-                    <Input value={aggregateItems(dropdownItems)} disabled />
-                  </Form.Item>
-                  <Form.Item name="totalPayment" label="Payment Amount (Rs)">
-                    <Input disabled />
-                  </Form.Item>
-                  <Form.Item
-                    name="onlineAmount"
-                    label="Online Amount (Rs)"
-                    rules={[
-                      { required: true, message: "Please enter online amount" },
-                    ]}
-                  >
-                    <Input type="number" min={0} step="0.01" />
-                  </Form.Item>
-                  <Form.Item
-                    name="cashAmount"
-                    label="Cash Amount (Rs)"
-                    rules={[
-                      { required: true, message: "Please enter cash amount" },
-                    ]}
-                  >
-                    <Input type="number" min={0} step="0.01" />
-                  </Form.Item>
-                  <Form.Item>
-                    <Button type="primary" htmlType="submit">
-                      Save Payment
-                    </Button>
-                  </Form.Item>
-                </Form>
-              </>
-            );
-          })()}
         </Modal>
 
         <Modal
