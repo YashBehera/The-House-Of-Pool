@@ -2451,7 +2451,6 @@ const PoolBillingSystem = ({
                 >
                   <Input
                     type="datetime-local"
-                    min={moment().format("YYYY-MM-DDTHH:mm")}
                   />
                 </Form.Item>
                 <Form.Item
@@ -2463,7 +2462,6 @@ const PoolBillingSystem = ({
                 >
                   <Input
                     type="datetime-local"
-                    min={moment().format("YYYY-MM-DDTHH:mm")}
                   />
                 </Form.Item>
                 <Form.Item
