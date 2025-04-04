@@ -20,9 +20,9 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
-  query,
   setDoc,
   updateDoc,
+  query,
   where,
   addDoc,
   deleteDoc,
@@ -37,6 +37,7 @@ import logo2 from "./HOP5.png";
 import Navbar from "./Navbar";
 import { getItemPrices } from "./PoolBillingSystem";
 import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
+
 const { Title } = Typography;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
@@ -85,6 +86,15 @@ const SalesReport = ({
   const [userRole, setUserRole] = useState(null);
   const [isActionAuthenticated, setIsActionAuthenticated] = useState(false);
 
+  // New state for table counts
+  const [tableCounts, setTableCounts] = useState({
+    total: 0,
+    snooker: 0,
+    ps: 0,
+    tableTennis: 0,
+    turf: 0,
+  });
+
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
       setIsAuthenticated(!!user);
@@ -95,22 +105,21 @@ const SalesReport = ({
           if (docSnap.exists()) {
             const userData = docSnap.data();
             setUserRole(userData.role || "unknown");
-            setIsActionAuthenticated(userData.role === "admin"); // Admin has full access by default
+            setIsActionAuthenticated(userData.role === "admin");
             if (userData.role === "restricted" && userData.location) {
-              setSelectedLocation(userData.location); // Pre-set location for restricted users
+              setSelectedLocation(userData.location);
             }
           } else {
-            // Default user setup if no Firestore doc exists
             const email = user.email;
             if (email === "hop@gmail.com") {
               setUserRole("admin");
-              setIsActionAuthenticated(true); // Admin has full access
+              setIsActionAuthenticated(true);
             } else if (
               email === "oldhop@gmail.com" ||
               email === "newhop@gmail.com"
             ) {
               setUserRole("restricted");
-              setIsActionAuthenticated(false); // Restricted users need to authenticate
+              setIsActionAuthenticated(false);
               setSelectedLocation(
                 email === "oldhop@gmail.com"
                   ? "Old House Of Pool"
@@ -162,7 +171,7 @@ const SalesReport = ({
 
   useEffect(() => {
     const fetchPrices = async () => {
-      setLoading(true); // Add loading state for prices
+      setLoading(true);
       const prices = await getItemPrices(selectedLocation);
       setITEM_PRICES(prices);
       setLoading(false);
@@ -226,7 +235,21 @@ const SalesReport = ({
     });
   };
 
-  // Modify the fetchSalesData function
+  // Calculate table counts for each category
+  const calculateTableCounts = (tables) => {
+    const closedTables = tables.filter((table) => table.isClosed);
+    const counts = {
+      total: closedTables.length,
+      snooker: closedTables.filter((t) => t.gameType === "Snooker Table")
+        .length,
+      ps: closedTables.filter((t) => t.gameType === "Play Station").length,
+      tableTennis: closedTables.filter((t) => t.gameType === "Table Tennis")
+        .length,
+      turf: closedTables.filter((t) => t.gameType === "Turf").length,
+    };
+    return counts;
+  };
+
   const fetchSalesData = async () => {
     setLoading(true);
     try {
@@ -240,7 +263,6 @@ const SalesReport = ({
 
       if (reportType === "daily") {
         tables = (await getTablesByDate(selectedDate, selectedLocation)) || [];
-        console.log("Fetched Tables:", tables);
         setActiveTables(tables);
 
         const reportDocRef = doc(
@@ -249,7 +271,6 @@ const SalesReport = ({
           `${selectedLocation}_${selectedDate}`
         );
 
-        // Fetch payments for the selected date and location
         const paymentsQuery = query(
           collection(db, "payments"),
           where("location", "==", selectedLocation),
@@ -321,19 +342,15 @@ const SalesReport = ({
           salesByItems,
           lastUpdated: new Date().toISOString(),
         };
-        console.log("Saving to Firestore:", updatedReportData);
         await setDoc(reportDocRef, updatedReportData, { merge: true });
 
         setTotalRevenue(totalRevenue);
         setCashRevenue(cashRevenue);
         setOnlineRevenue(onlineRevenue);
         setBalanceReceived(balanceReceived);
-        console.log("State Updated:", {
-          totalRevenue,
-          cashRevenue,
-          onlineRevenue,
-          balanceReceived,
-        });
+
+        // Calculate and set table counts
+        setTableCounts(calculateTableCounts(tables));
       } else if (reportType === "custom" && dateRange.length === 2) {
         const [start, end] = dateRange;
         const startDate = moment(start).startOf("day");
@@ -448,7 +465,6 @@ const SalesReport = ({
         tables = dailyData.flatMap((data) => data.tables);
         setActiveTables(tables);
 
-        // Aggregate values for custom report
         dailyData.forEach((dayData) => {
           totalRevenue += dayData.totalRevenue;
           cashRevenue += dayData.cashRevenue;
@@ -464,11 +480,13 @@ const SalesReport = ({
           });
         });
 
-        // Update state for custom report
         setTotalRevenue(totalRevenue);
         setCashRevenue(cashRevenue);
         setOnlineRevenue(onlineRevenue);
         setBalanceReceived(balanceReceived);
+
+        // Calculate and set table counts for custom range
+        setTableCounts(calculateTableCounts(tables));
       }
     } catch (error) {
       console.error("Error fetching sales data:", error);
@@ -477,7 +495,6 @@ const SalesReport = ({
     }
   };
 
-  // Modify the useEffect hook to only run for daily report
   useEffect(() => {
     if (reportType !== "daily" || !activeTables || !Array.isArray(activeTables))
       return;
@@ -521,23 +538,21 @@ const SalesReport = ({
     );
     const newBalanceReceived = foodPaymentsRevenue;
 
-    console.log("Daily - nonFoodTablesRevenue:", nonFoodTablesRevenue);
-    console.log("Daily - foodTotalRevenue:", foodTotalRevenue);
-
     setTotalRevenue(newTotalRevenue);
-    console.log(totalRevenue);
     setCashRevenue(newCashRevenue);
     setOnlineRevenue(newOnlineRevenue);
     setBalanceReceived(newBalanceReceived);
-  }, [activeTables, ITEM_PRICES, reportType]); // Add reportType to dependencies
+
+    // Calculate and set table counts for daily report
+    setTableCounts(calculateTableCounts(activeTables));
+  }, [activeTables, ITEM_PRICES, reportType]);
 
   useEffect(() => {
-    if (Object.keys(ITEM_PRICES).length === 0) return; // Wait for prices
+    if (Object.keys(ITEM_PRICES).length === 0) return;
     fetchSalesData();
   }, [selectedLocation, reportType, selectedDate, dateRange, ITEM_PRICES]);
 
   const handleEditCustomer = (customer) => {
-    console.log("handleEditCustomer called with:", customer); // Debug
     setEditCustomerData(customer);
     setIsEditCustomerModalOpen(true);
     editCustomerForm.setFieldsValue({
@@ -560,11 +575,9 @@ const SalesReport = ({
     const newDues = Math.max(0, currentDues - totalPayment);
 
     try {
-      // Update customer dues
       await updateDoc(customerRef, { dues: newDues });
 
       if (totalPayment > 0) {
-        // Store payment in the "payments" collection
         const paymentRef = doc(collection(db, "payments"));
         await setDoc(paymentRef, {
           customerId: editCustomerData.id,
@@ -577,7 +590,6 @@ const SalesReport = ({
           timestamp: new Date().toISOString(),
         });
 
-        // Update daily sales report
         const reportDocRef = doc(
           db,
           "dailySalesReports",
@@ -607,7 +619,6 @@ const SalesReport = ({
         };
         await setDoc(reportDocRef, updatedReportData, { merge: true });
 
-        // Update state directly
         setTotalRevenue((prev) => prev + totalPayment);
         setCashRevenue((prev) => prev + cashPaymentAmount);
         setOnlineRevenue((prev) => prev + onlinePaymentAmount);
@@ -666,14 +677,12 @@ const SalesReport = ({
       totalAmount: doc.data().totalAmount || 0,
     }));
 
-    // Sort paymentRecords by date in descending order (most recent first)
     paymentRecords.sort(
       (a, b) =>
         moment(b.date, "YYYY-MM-DD").unix() -
         moment(a.date, "YYYY-MM-DD").unix()
     );
 
-    // Set states and open modal after data is fetched and sorted
     setPaymentHistory(paymentRecords);
     setEditCustomerData(customer);
     setIsPaymentHistoryModalOpen(true);
@@ -777,7 +786,6 @@ const SalesReport = ({
     }
   };
 
-  // Handle editing an expense
   const handleEditExpense = (record) => {
     setEditExpenseRecord(record);
     setIsEditExpenseModalOpen(true);
@@ -812,7 +820,6 @@ const SalesReport = ({
     }
   };
 
-  // Handle deleting an expense
   const handleDeleteExpense = (record) => {
     setDeleteExpenseRecord(record);
     setIsDeleteExpenseModalOpen(true);
@@ -835,7 +842,6 @@ const SalesReport = ({
     }
   };
 
-  // Expenses table columns
   const expenseColumns = [
     {
       title: "Expense",
@@ -941,12 +947,6 @@ const SalesReport = ({
           <Button
             type="primary"
             onClick={() => {
-              console.log(
-                "Edit button clicked, userRole:",
-                userRole,
-                "isActionAuthenticated:",
-                isActionAuthenticated
-              ); // Debug
               if (!userRole) {
                 alert("Please log in to perform this action.");
                 return;
@@ -1049,6 +1049,21 @@ const SalesReport = ({
     },
   ];
 
+  const tableCountColumns = [
+    {
+      title: "Category",
+      dataIndex: "category",
+      key: "category",
+      sorter: (a, b) => a.category.localeCompare(b.category),
+    },
+    {
+      title: "Closed Tables",
+      dataIndex: "count",
+      key: "count",
+      sorter: (a, b) => a.count - b.count,
+    },
+  ];
+
   const handleLoginSubmit = async (values) => {
     try {
       const { password } = values;
@@ -1061,7 +1076,7 @@ const SalesReport = ({
 
       const docRef = doc(db, "Users", user.uid);
       const docSnap = await getDoc(docRef);
-      let adminPassword = "defaultAdminPassword"; // Fallback (set in Firestore ideally)
+      let adminPassword = "defaultAdminPassword";
 
       if (docSnap.exists() && docSnap.data().adminPassword) {
         adminPassword = docSnap.data().adminPassword;
@@ -1212,6 +1227,36 @@ const SalesReport = ({
                 </Card>
               </Col>
             </Row>
+
+            {/* New Row for Table Counts */}
+            <Title level={4} style={{ marginTop: "20px", color: "#1890ff" }}>
+              📋 Table Counts
+            </Title>
+            <Table
+              dataSource={[
+                { key: "total", category: "Total", count: tableCounts.total },
+                {
+                  key: "snooker",
+                  category: "Snooker",
+                  count: tableCounts.snooker,
+                },
+                { key: "ps", category: "PS", count: tableCounts.ps },
+                {
+                  key: "tableTennis",
+                  category: "Table Tennis",
+                  count: tableCounts.tableTennis,
+                },
+                { key: "turf", category: "Turf", count: tableCounts.turf },
+              ]}
+              columns={tableCountColumns}
+              bordered
+              pagination={false} // No pagination needed for 5 rows
+              style={{
+                marginBottom: "20px",
+                borderRadius: "8px",
+                overflow: "hidden",
+              }}
+            />
 
             <Input
               placeholder="🔍 Search sales..."
@@ -1417,7 +1462,7 @@ const SalesReport = ({
               <Input disabled />
             </Form.Item>
             <Form.Item name="dues" label="Current Dues (Rs)">
-              <Input disabled />
+              <Input type="number" min={0} />
             </Form.Item>
             <Form.Item name="cashPaymentAmount" label="Cash Payment (Rs)">
               <Input type="number" min={0} />
