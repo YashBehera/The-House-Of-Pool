@@ -85,8 +85,60 @@ const SalesReport = ({
   const [editExpenseForm] = Form.useForm();
   const [userRole, setUserRole] = useState(null);
   const [isActionAuthenticated, setIsActionAuthenticated] = useState(false);
+  const [salesByGameType, setSalesByGameType] = useState([]);
 
-  // New state for table counts
+  const calculateSalesByGameType = (tables) => {
+    const gameTypes = {
+      "Snooker Table": { cash: 0, online: 0, total: 0, count: 0 },
+      "Play Station": { cash: 0, online: 0, total: 0, count: 0 },
+      "Table Tennis": { cash: 0, online: 0, total: 0, count: 0 },
+      Turf: { cash: 0, online: 0, total: 0, count: 0 },
+      "TURF ADVANCE": { cash: 0, online: 0, total: 0, count: 0 },
+    };
+
+    tables.forEach((table) => {
+      if (table.isClosed && table.paymentOption === "Paid") {
+        const gameType = table.gameType || "Other";
+        const cash = Math.round(table.cashAmount || 0);
+        const online = Math.round(table.onlineAmount || 0);
+        const total = Math.round(table.totalAmount || 0);
+        const cashAdvance = Math.round(table.cashAdvance || 0);
+        const onlineAdvance = Math.round(table.onlineAdvance || 0);
+
+        if (gameType === "Turf") {
+          // Add pending amounts (cashAmount + onlineAmount) to Turf
+          gameTypes["Turf"].cash += cash;
+          gameTypes["Turf"].online += online;
+          gameTypes["Turf"].total += total - (cashAdvance + onlineAdvance);
+          gameTypes["Turf"].count += 1; // Increment table count for Turf
+
+          // Add advance amounts to TURF ADVANCE
+          if (cashAdvance > 0 || onlineAdvance > 0) {
+            gameTypes["TURF ADVANCE"].cash += cashAdvance;
+            gameTypes["TURF ADVANCE"].online += onlineAdvance;
+            gameTypes["TURF ADVANCE"].total += cashAdvance + onlineAdvance;
+            gameTypes["TURF ADVANCE"].count += 1; // Increment table count for TURF ADVANCE
+          }
+        } else if (gameType !== "FOOD") {
+          gameTypes[gameType].cash += cash;
+          gameTypes[gameType].online += online;
+          gameTypes[gameType].total += total;
+          gameTypes[gameType].count += 1; // Increment table count for other game types
+        }
+      }
+    });
+
+    return Object.entries(gameTypes)
+      .filter(([, data]) => data.total > 0 || data.count > 0) // Only show types with sales or counts
+      .map(([type, { cash, online, total, count }]) => ({
+        type,
+        cash,
+        online,
+        total,
+        count,
+      }));
+  };
+
   const [tableCounts, setTableCounts] = useState({
     total: 0,
     snooker: 0,
@@ -220,22 +272,6 @@ const SalesReport = ({
     }));
   };
 
-  const saveTables = async (date, tables, location) => {
-    const formattedTables = tables.map((table) => ({
-      ...table,
-      startTime: table.startTime
-        ? new Date(table.startTime).toISOString()
-        : null,
-      endTime: table.endTime ? new Date(table.endTime).toISOString() : null,
-      cashAmount: table.cashAmount || 0,
-      onlineAmount: table.onlineAmount || 0,
-    }));
-    await setDoc(doc(db, "tables", `${location}_${date}`), {
-      data: formattedTables,
-    });
-  };
-
-  // Calculate table counts for each category
   const calculateTableCounts = (tables) => {
     const closedTables = tables.filter((table) => table.isClosed);
     const counts = {
@@ -258,8 +294,6 @@ const SalesReport = ({
       let cashRevenue = 0;
       let onlineRevenue = 0;
       let balanceReceived = 0;
-      let salesByGameType = {};
-      let salesByItems = {};
 
       if (reportType === "daily") {
         tables = (await getTablesByDate(selectedDate, selectedLocation)) || [];
@@ -294,52 +328,37 @@ const SalesReport = ({
 
         cashRevenue =
           tables.reduce(
-            (sum, entry) => sum + (Number(entry.cashAmount) || 0),
+            (sum, entry) =>
+              sum +
+              (Number(entry.cashAmount || 0) + Number(entry.cashAdvance || 0)),
             0
           ) + paymentCashRevenue;
         onlineRevenue =
           tables.reduce(
-            (sum, entry) => sum + (Number(entry.onlineAmount) || 0),
+            (sum, entry) =>
+              sum +
+              (Number(entry.onlineAmount || 0) +
+                Number(entry.onlineAdvance || 0)),
             0
           ) + paymentOnlineRevenue;
         balanceReceived = paymentTotalRevenue;
 
         totalRevenue = cashRevenue + onlineRevenue;
 
-        salesByGameType = tables.reduce((acc, entry) => {
-          const { gameType, totalAmount, paymentOption, orderedItems } = entry;
-          if (
-            !gameType ||
-            totalAmount === undefined ||
-            gameType === "FOOD" ||
-            !entry.isClosed ||
-            paymentOption !== "Paid"
-          )
-            return acc;
-          const itemCost = orderedItems.reduce(
-            (sum, item) => sum + (ITEM_PRICES[item] || 0),
-            0
-          );
-          const gameRevenue = Number(totalAmount) - itemCost;
-          acc[gameType] =
-            (acc[gameType] || 0) + (gameRevenue > 0 ? gameRevenue : 0);
-          return acc;
-        }, {});
-
-        salesByItems = tables.reduce((acc, entry) => {
-          entry.orderedItems.forEach((item) => {
-            acc[item] = (acc[item] || 0) + 1;
-          });
-          return acc;
-        }, {});
+        const salesByGameTypeData = calculateSalesByGameType(tables);
+        setSalesByGameType(salesByGameTypeData);
 
         const updatedReportData = {
           totalRevenue,
           cashRevenue,
           onlineRevenue,
           balanceReceived,
-          salesByGameType,
-          salesByItems,
+          salesByGameType: Object.fromEntries(
+            salesByGameTypeData.map(({ type, total, count }) => [
+              type,
+              { total, count },
+            ])
+          ),
           lastUpdated: new Date().toISOString(),
         };
         await setDoc(reportDocRef, updatedReportData, { merge: true });
@@ -348,8 +367,6 @@ const SalesReport = ({
         setCashRevenue(cashRevenue);
         setOnlineRevenue(onlineRevenue);
         setBalanceReceived(balanceReceived);
-
-        // Calculate and set table counts
         setTableCounts(calculateTableCounts(tables));
       } else if (reportType === "custom" && dateRange.length === 2) {
         const [start, end] = dateRange;
@@ -377,8 +394,6 @@ const SalesReport = ({
             cashRevenue: 0,
             onlineRevenue: 0,
             balanceReceived: 0,
-            salesByGameType: {},
-            salesByItems: {},
             tables: dayTables,
           };
 
@@ -388,75 +403,22 @@ const SalesReport = ({
             dayData.cashRevenue = reportData.cashRevenue || 0;
             dayData.onlineRevenue = reportData.onlineRevenue || 0;
             dayData.balanceReceived = reportData.balanceReceived || 0;
-            dayData.salesByGameType = reportData.salesByGameType || {};
-            dayData.salesByItems = reportData.salesByItems || {};
           } else {
-            const foodRow = dayTables.find((entry) => entry.name === "FOOD");
-
-            const nonFoodTablesRevenue = dayTables.reduce((acc, entry) => {
-              const { totalAmount, paymentOption, isClosed, gameType } = entry;
-              if (
-                !isClosed ||
-                paymentOption !== "Paid" ||
-                totalAmount === undefined ||
-                gameType === "FOOD"
-              )
-                return acc;
-              return acc + Number(totalAmount);
-            }, 0);
-
-            const foodItemsRevenue = foodRow
-              ? foodRow.orderedItems.reduce(
-                  (sum, item) => sum + (ITEM_PRICES[item] || 0),
-                  0
-                )
-              : 0;
-            const foodPaymentsRevenue = foodRow
-              ? (foodRow.cashAmount || 0) + (foodRow.onlineAmount || 0)
-              : 0;
-            const foodTotalRevenue =
-              foodRow && foodRow.isClosed && foodRow.paymentOption === "Paid"
-                ? Number(foodRow.totalAmount || 0) + foodPaymentsRevenue
-                : foodItemsRevenue + foodPaymentsRevenue;
-
-            dayData.totalRevenue = nonFoodTablesRevenue + foodTotalRevenue;
             dayData.cashRevenue = dayTables.reduce(
-              (sum, entry) => sum + (Number(entry.cashAmount) || 0),
+              (sum, entry) =>
+                sum +
+                (Number(entry.cashAmount || 0) +
+                  Number(entry.cashAdvance || 0)),
               0
             );
             dayData.onlineRevenue = dayTables.reduce(
-              (sum, entry) => sum + (Number(entry.onlineAmount) || 0),
+              (sum, entry) =>
+                sum +
+                (Number(entry.onlineAmount || 0) +
+                  Number(entry.onlineAdvance || 0)),
               0
             );
-            dayData.balanceReceived = foodPaymentsRevenue;
-
-            dayData.salesByGameType = dayTables.reduce((acc, entry) => {
-              const { gameType, totalAmount, paymentOption, orderedItems } =
-                entry;
-              if (
-                !gameType ||
-                totalAmount === undefined ||
-                gameType === "FOOD" ||
-                !entry.isClosed ||
-                paymentOption !== "Paid"
-              )
-                return acc;
-              const itemCost = orderedItems.reduce(
-                (sum, item) => sum + (ITEM_PRICES[item] || 0),
-                0
-              );
-              const gameRevenue = Number(totalAmount) - itemCost;
-              acc[gameType] =
-                (acc[gameType] || 0) + (gameRevenue > 0 ? gameRevenue : 0);
-              return acc;
-            }, {});
-
-            dayData.salesByItems = dayTables.reduce((acc, entry) => {
-              entry.orderedItems.forEach((item) => {
-                acc[item] = (acc[item] || 0) + 1;
-              });
-              return acc;
-            }, {});
+            dayData.totalRevenue = dayData.cashRevenue + dayData.onlineRevenue;
           }
           return dayData;
         });
@@ -470,22 +432,15 @@ const SalesReport = ({
           cashRevenue += dayData.cashRevenue;
           onlineRevenue += dayData.onlineRevenue;
           balanceReceived += dayData.balanceReceived;
-
-          Object.entries(dayData.salesByGameType).forEach(([game, revenue]) => {
-            salesByGameType[game] = (salesByGameType[game] || 0) + revenue;
-          });
-
-          Object.entries(dayData.salesByItems).forEach(([item, count]) => {
-            salesByItems[item] = (salesByItems[item] || 0) + count;
-          });
         });
+
+        const salesByGameTypeData = calculateSalesByGameType(tables);
+        setSalesByGameType(salesByGameTypeData);
 
         setTotalRevenue(totalRevenue);
         setCashRevenue(cashRevenue);
         setOnlineRevenue(onlineRevenue);
         setBalanceReceived(balanceReceived);
-
-        // Calculate and set table counts for custom range
         setTableCounts(calculateTableCounts(tables));
       }
     } catch (error) {
@@ -730,7 +685,11 @@ const SalesReport = ({
 
   const sortedItemSales = Object.entries(
     activeTables.reduce((acc, entry) => {
-      entry.orderedItems.forEach((item) => {
+      // Use an empty array as a fallback if orderedItems is undefined or not an array
+      const orderedItems = Array.isArray(entry.orderedItems)
+        ? entry.orderedItems
+        : [];
+      orderedItems.forEach((item) => {
         acc[item] = (acc[item] || 0) + 1;
       });
       return acc;
@@ -883,15 +842,35 @@ const SalesReport = ({
   const gameColumns = [
     {
       title: "Game Type 🎱",
-      dataIndex: "gameType",
-      key: "gameType",
-      sorter: (a, b) => a.gameType.localeCompare(b.gameType),
+      dataIndex: "type",
+      key: "type",
+      sorter: (a, b) => a.type.localeCompare(b.type),
+    },
+    {
+      title: "Table Count 📋",
+      dataIndex: "count",
+      key: "count",
+      sorter: (a, b) => a.count - b.count,
+    },
+    {
+      title: "Cash (Rs)",
+      dataIndex: "cash",
+      key: "cash",
+      sorter: (a, b) => a.cash - b.cash,
+      render: (cash) => `Rs ${cash.toFixed(2)}`,
+    },
+    {
+      title: "Online (Rs)",
+      dataIndex: "online",
+      key: "online",
+      sorter: (a, b) => a.online - b.online,
+      render: (online) => `Rs ${online.toFixed(2)}`,
     },
     {
       title: "Total Sales (Rs) 💰",
-      dataIndex: "totalSales",
-      key: "totalSales",
-      sorter: (a, b) => a.totalSales - b.totalSales,
+      dataIndex: "total",
+      key: "total",
+      sorter: (a, b) => a.total - b.total,
       render: (total) => `Rs ${total.toFixed(2)}`,
     },
   ];
@@ -1228,36 +1207,6 @@ const SalesReport = ({
               </Col>
             </Row>
 
-            {/* New Row for Table Counts */}
-            <Title level={4} style={{ marginTop: "20px", color: "#1890ff" }}>
-              📋 Table Counts
-            </Title>
-            <Table
-              dataSource={[
-                { key: "total", category: "Total", count: tableCounts.total },
-                {
-                  key: "snooker",
-                  category: "Snooker",
-                  count: tableCounts.snooker,
-                },
-                { key: "ps", category: "PS", count: tableCounts.ps },
-                {
-                  key: "tableTennis",
-                  category: "Table Tennis",
-                  count: tableCounts.tableTennis,
-                },
-                { key: "turf", category: "Turf", count: tableCounts.turf },
-              ]}
-              columns={tableCountColumns}
-              bordered
-              pagination={false} // No pagination needed for 5 rows
-              style={{
-                marginBottom: "20px",
-                borderRadius: "8px",
-                overflow: "hidden",
-              }}
-            />
-
             <Input
               placeholder="🔍 Search sales..."
               allowClear
@@ -1275,7 +1224,9 @@ const SalesReport = ({
               🎮 Sales by Game Type
             </Title>
             <Table
-              dataSource={filteredGames}
+              dataSource={salesByGameType.filter(({ type }) =>
+                type.toLowerCase().includes(searchText.toLowerCase())
+              )}
               columns={gameColumns}
               bordered
               pagination={{ pageSize: 5 }}
@@ -1290,7 +1241,36 @@ const SalesReport = ({
                     <strong>Total</strong>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={1}>
-                    <strong>Rs {totalGameSales.toFixed(2)}</strong>
+                    <strong>
+                      {salesByGameType.reduce(
+                        (sum, game) => sum + game.count,
+                        0
+                      )}
+                    </strong>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={2}>
+                    <strong>
+                      Rs{" "}
+                      {salesByGameType
+                        .reduce((sum, game) => sum + game.cash, 0)
+                        .toFixed(2)}
+                    </strong>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={3}>
+                    <strong>
+                      Rs{" "}
+                      {salesByGameType
+                        .reduce((sum, game) => sum + game.online, 0)
+                        .toFixed(2)}
+                    </strong>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={4}>
+                    <strong>
+                      Rs{" "}
+                      {salesByGameType
+                        .reduce((sum, game) => sum + game.total, 0)
+                        .toFixed(2)}
+                    </strong>
                   </Table.Summary.Cell>
                 </Table.Summary.Row>
               )}
