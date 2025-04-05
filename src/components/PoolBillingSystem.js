@@ -145,44 +145,46 @@ const PoolBillingSystem = ({
   const [userRole, setUserRole] = useState(null);
   const [isActionAuthenticated, setIsActionAuthenticated] = useState(false);
   const [monthlyTableCount, setMonthlyTableCount] = useState(0);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [tableIdToDelete, setTableIdToDelete] = useState(null);
 
+  const fetchMonthlyTableCountUpToYesterday = async (date) => {
+    if (!isAuthenticated || !selectedLocation) return 0;
+
+    const startOfMonth = moment(date).startOf("month").format("YYYY-MM-DD");
+    const previousDay = moment(date).subtract(1, "day").endOf("day").toDate();
+    const tablesCollection = collection(db, "tables");
+    const q = query(
+      tablesCollection,
+      where("location", "==", selectedLocation),
+      where("startTime", ">=", new Date(`${startOfMonth}T00:00:00Z`)),
+      where("startTime", "<=", previousDay),
+      orderBy("startTime")
+    );
+
+    try {
+      const querySnapshot = await getDocs(q);
+      let totalTablesUpToYesterday = 0;
+      querySnapshot.forEach((doc) => {
+        const tableData = doc.data().data || [];
+        totalTablesUpToYesterday += tableData.filter(
+          (t) => t.name !== "FOOD" // Exclude FOOD row from counting
+        ).length;
+      });
+      return totalTablesUpToYesterday;
+    } catch (error) {
+      console.error("Error fetching table count up to yesterday:", error);
+      return 0;
+    }
+  };
+
+  // Update useEffect to fetch monthly table count up to yesterday
   useEffect(() => {
-    const fetchMonthlyTableCount = async () => {
-      if (!isAuthenticated || !selectedLocation) return;
-
-      const startOfMonth = moment(selectedDate)
-        .startOf("month")
-        .format("YYYY-MM-DD");
-      const previousDay = moment(selectedDate)
-        .subtract(1, "day")
-        .endOf("day")
-        .toDate();
-      const tablesCollection = collection(db, "tables");
-      const q = query(
-        tablesCollection,
-        where("location", "==", selectedLocation),
-        where("startTime", ">=", new Date(`${startOfMonth}T00:00:00Z`)),
-        where("startTime", "<=", previousDay),
-        orderBy("startTime")
-      );
-
-      try {
-        const querySnapshot = await getDocs(q);
-        let totalTablesUpToYesterday = 0;
-        querySnapshot.forEach((doc) => {
-          const tableData = doc.data().data || [];
-          totalTablesUpToYesterday += tableData.filter(
-            (t) => t.name !== "FOOD"
-          ).length;
-        });
-        setMonthlyTableCount(totalTablesUpToYesterday);
-      } catch (error) {
-        console.error("Error fetching monthly table count:", error);
-        setMonthlyTableCount(0);
-      }
+    const fetchCount = async () => {
+      const count = await fetchMonthlyTableCountUpToYesterday(selectedDate);
+      setMonthlyTableCount(count);
     };
-
-    fetchMonthlyTableCount();
+    fetchCount();
   }, [selectedDate, selectedLocation, isAuthenticated]);
 
   const handleViewFoodItems = (record) => {
@@ -467,14 +469,26 @@ const PoolBillingSystem = ({
 
   const saveTables = async (date, tables, location) => {
     if (!isAuthenticated) return;
-    const formattedTables = tables.map((table) => ({
-      ...table,
-      startTime: table.startTime
-        ? new Date(table.startTime).toISOString()
-        : null,
-      endTime: table.endTime ? new Date(table.endTime).toISOString() : null,
-      location,
-    }));
+    const formattedTables = tables.map((table) => {
+      const formattedTable = {
+        ...table,
+        startTime: table.startTime
+          ? new Date(table.startTime).toISOString()
+          : null,
+        endTime: table.endTime ? new Date(table.endTime).toISOString() : null,
+        location: location || selectedLocation,
+        orderedItems: table.orderedItems || [],
+        cashAmount: table.cashAmount || 0,
+        onlineAmount: table.onlineAmount || 0,
+        totalAmount: table.totalAmount || 0,
+        advancePayment: table.advancePayment || 0,
+        isClosed: table.isClosed || false,
+      };
+      // Log each table to check for undefined values
+      console.log("Formatted Table:", formattedTable);
+      return formattedTable;
+    });
+    console.log("Saving tables for", `${location}_${date}`, formattedTables);
     await setDoc(doc(db, "tables", `${location}_${date}`), {
       data: formattedTables,
     });
@@ -624,7 +638,8 @@ const PoolBillingSystem = ({
     let totalAmount = totalItemCost;
 
     if (table.gameType === "Turf") {
-      totalAmount += Math.round((totalMinutes / 60) * TURF_RATE_PER_HOUR);
+      const turfCost = Math.round((totalMinutes / 60) * TURF_RATE_PER_HOUR);
+      totalAmount += turfCost; // Total includes turf cost but not advance in calculation
     } else if (table.gameType === "Snooker Table") {
       if (table.location === LOCATIONS.OLD_HOUSE) {
         const hourlyRate = OLD_HOUSE_POOL_RATES[table.table] || 0;
@@ -722,22 +737,23 @@ const PoolBillingSystem = ({
 
     const startTime = moment(values.startTime);
     const endTime = moment(values.endTime);
-    const advancePayment = parseFloat(values.advancePayment) || 0;
+    const cashAdvance = parseFloat(values.cashAdvance) || 0;
+    const onlineAdvance = parseFloat(values.onlineAdvance) || 0;
 
     const reservation = {
       id: uuidv4(),
       table: selectedTable,
       name: values.name,
       phone: values.phone,
-      startTime: startTime,
-      endTime: endTime,
-      advancePayment,
+      startTime: startTime.toDate(),
+      endTime: endTime.toDate(),
+      cashAdvance, // New field
+      onlineAdvance, // New field
       gameType: "Turf",
       isClosed: false,
       location: selectedLocation,
       isActive: false,
     };
-
     setActiveTables((prevTables) => {
       const updatedTables = [...prevTables, reservation];
       saveTables(selectedDate, updatedTables, selectedLocation);
@@ -1168,10 +1184,10 @@ const PoolBillingSystem = ({
           newEndTime
         );
 
-        // Ensure cashAmount and onlineAmount are integers
         const cashAmount = Math.round(parseFloat(values.cashAmount) || 0);
         const onlineAmount = Math.round(parseFloat(values.onlineAmount) || 0);
-        const advancePayment = t.advancePayment || 0;
+        const cashAdvance = t.cashAdvance || 0;
+        const onlineAdvance = t.onlineAdvance || 0;
         let updatedDues = 0;
 
         if (selectedPaymentOption !== "Paid") {
@@ -1180,7 +1196,9 @@ const PoolBillingSystem = ({
           );
           if (selectedCustomer) {
             updatedDues =
-              totalAmount - advancePayment - (cashAmount + onlineAmount);
+              totalAmount -
+              (cashAdvance + onlineAdvance) -
+              (cashAmount + onlineAmount);
             if (updatedDues > 0)
               updateCustomerDues(selectedCustomer.id, updatedDues);
           }
@@ -1198,7 +1216,8 @@ const PoolBillingSystem = ({
           totalAmount,
           cashAmount,
           onlineAmount,
-          advancePayment,
+          cashAdvance,
+          onlineAdvance,
           isClosed: true,
           dues: updatedDues > 0 ? updatedDues : 0,
           paymentOption: selectedPaymentOption,
@@ -1238,8 +1257,13 @@ const PoolBillingSystem = ({
   };
 
   const deleteTable = async (id) => {
-    console.log("Deleting Table with ID:", id);
+    console.log("Preparing to delete Table with ID:", id);
+    setTableIdToDelete(id);
+    setShowDeleteConfirmModal(true); // Show confirmation modal instead of deleting immediately
+  };
 
+  // New confirmDelete function
+  const confirmDelete = async () => {
     if (!isAuthenticated) {
       console.warn("Cannot delete table: User not authenticated");
       return;
@@ -1248,17 +1272,26 @@ const PoolBillingSystem = ({
     try {
       setActiveTables((prevTables) => {
         console.log("Before Delete:", prevTables);
-        const updatedTables = prevTables.filter((t) => t.id !== id);
+        const updatedTables = prevTables.filter(
+          (t) => t.id !== tableIdToDelete
+        );
         console.log("After Delete:", updatedTables);
-
-        // Persist the updated tables to Firestore
         saveTables(selectedDate, updatedTables, selectedLocation);
         return updatedTables;
       });
     } catch (error) {
       console.error("Error deleting table from Firestore:", error);
       alert("Failed to delete table. Please try again.");
+    } finally {
+      setShowDeleteConfirmModal(false);
+      setTableIdToDelete(null);
     }
+  };
+
+  // New cancelDelete function
+  const cancelDelete = () => {
+    setShowDeleteConfirmModal(false);
+    setTableIdToDelete(null);
   };
 
   useEffect(() => {
@@ -1298,15 +1331,13 @@ const PoolBillingSystem = ({
     }
 
     if (userRole === "admin" || isActionAuthenticated) {
-      // Admin or authenticated restricted user can perform the action directly
       if (action === "edit") {
         const record = activeTables.find((t) => t.id === id);
         if (record) handleEdit(record);
       } else if (action === "delete") {
-        deleteTable(id);
+        deleteTable(id); // This now triggers the confirmation modal
       }
     } else if (userRole === "restricted") {
-      // Restricted user needs to authenticate
       setDropdownAction(action);
       setDropdownRecordId(id);
       setIsDropdownOpen(true);
@@ -1396,11 +1427,29 @@ const PoolBillingSystem = ({
   const sortedTables = [...activeTables]
     .filter((table) => table.location === selectedLocation)
     .sort((a, b) => {
+      // 1. "FOOD" row always comes first
       if (a.name === "FOOD") return -1;
       if (b.name === "FOOD") return 1;
-      if (!a.isClosed && b.isClosed) return -1;
-      if (a.isClosed && !b.isClosed) return 1;
-      return 0;
+
+      // 2. Turf tables (active or closed) come immediately after "FOOD"
+      const isATurf = a.gameType === "Turf";
+      const isBTurf = b.gameType === "Turf";
+
+      if (isATurf && !isBTurf) return -1; // Turf comes before non-turf
+      if (!isATurf && isBTurf) return 1; // Non-turf comes after turf
+
+      // 3. If both are turf or both are not turf, sort by active/closed status
+      if (isATurf && isBTurf) {
+        // Both are turf, maintain order based on isClosed
+        if (!a.isClosed && b.isClosed) return -1; // Active turf before closed turf
+        if (a.isClosed && !b.isClosed) return 1; // Closed turf after active turf
+        return 0; // If both are active or both are closed, maintain original order
+      }
+
+      // 4. For non-turf tables, sort by active/closed status
+      if (!a.isClosed && b.isClosed) return -1; // Active tables before closed
+      if (a.isClosed && !b.isClosed) return 1; // Closed tables after active
+      return 0; // Maintain original order if both are active or both are closed
     });
 
   console.log(activeTables);
@@ -1982,7 +2031,7 @@ const PoolBillingSystem = ({
                             alt={ground}
                             style={{
                               width: "270px",
-                              height: "170px",
+                              height: "200px",
                               borderRadius: "5px",
                               margin: 0,
                               padding: 0,
@@ -2003,7 +2052,7 @@ const PoolBillingSystem = ({
                                 ? "red"
                                 : "rgba(0, 89, 255, 0.93)",
                               position: "relative",
-                              bottom: "10px",
+                              bottom: "40px",
                               color: "white",
                             }}
                           >
@@ -2022,8 +2071,8 @@ const PoolBillingSystem = ({
                                 style={{
                                   fontSize: "14px",
                                   fontWeight: "bold",
-                                  bottom: "108px",
-                                  right: "10px",
+                                  bottom: "200px",
+                                  left: "150px",
                                   position: "relative",
                                 }}
                               >
@@ -2168,11 +2217,11 @@ const PoolBillingSystem = ({
             {
               title: "S.No.",
               key: "serialNumber",
-              render: (_, record, index) => {
+              render: (_, record) => {
                 // Exclude "FOOD" row from serial numbering
                 if (record.name === "FOOD") return "-";
 
-                // Filter current day's tables (excluding "FOOD") and sort by startTime
+                // Filter and sort tables for the current day (excluding "FOOD")
                 const todaysTables = sortedTables
                   .filter(
                     (t) =>
@@ -2186,10 +2235,11 @@ const PoolBillingSystem = ({
                 // Find the index of the current record in today's tables
                 const tableIndex = todaysTables.indexOf(record);
 
-                // Serial number is the total up to yesterday plus today's index (starting from 1)
-                return tableIndex === -1
-                  ? "-"
-                  : monthlyTableCount + tableIndex + 1;
+                // If not in today's tables, return "-"
+                if (tableIndex === -1) return "-";
+
+                // Serial number = total up to yesterday + today's index (starting from 1)
+                return monthlyTableCount + tableIndex + 1;
               },
               align: "center",
             },
@@ -2281,14 +2331,28 @@ const PoolBillingSystem = ({
               title: "Cash (Rs)",
               dataIndex: "cashAmount",
               key: "cashAmount",
-              render: (a) => (a !== undefined ? Math.round(a) : "0"),
+              render: (cashAmount, record) => {
+                const totalCash =
+                  record.gameType === "Turf"
+                    ? Math.round((cashAmount || 0) + (record.cashAdvance || 0))
+                    : Math.round(cashAmount || 0);
+                return totalCash;
+              },
               align: "center",
             },
             {
               title: "Online (Rs)",
               dataIndex: "onlineAmount",
               key: "onlineAmount",
-              render: (a) => (a !== undefined ? Math.round(a) : "0"),
+              render: (onlineAmount, record) => {
+                const totalOnline =
+                  record.gameType === "Turf"
+                    ? Math.round(
+                        (onlineAmount || 0) + (record.onlineAdvance || 0)
+                      )
+                    : Math.round(onlineAmount || 0);
+                return totalOnline;
+              },
               align: "center",
             },
             {
@@ -2449,9 +2513,7 @@ const PoolBillingSystem = ({
                     { required: true, message: "Please select start time" },
                   ]}
                 >
-                  <Input
-                    type="datetime-local"
-                  />
+                  <Input type="datetime-local" />
                 </Form.Item>
                 <Form.Item
                   name="endTime"
@@ -2460,18 +2522,25 @@ const PoolBillingSystem = ({
                     { required: true, message: "Please select end time" },
                   ]}
                 >
-                  <Input
-                    type="datetime-local"
-                  />
+                  <Input type="datetime-local" />
                 </Form.Item>
                 <Form.Item
-                  name="advancePayment"
-                  label="Advance Payment (Rs)"
+                  name="cashAdvance"
+                  label="Cash Advance (Rs)"
                   rules={[
-                    { required: true, message: "Please enter advance payment" },
+                    { required: true, message: "Please enter cash advance" },
                   ]}
                 >
-                  <Input type="number" min={0} />
+                  <Input type="number" min={0} step="1" />
+                </Form.Item>
+                <Form.Item
+                  name="onlineAdvance"
+                  label="Online Advance (Rs)"
+                  rules={[
+                    { required: true, message: "Please enter online advance" },
+                  ]}
+                >
+                  <Input type="number" min={0} step="1" />
                 </Form.Item>
                 <Table
                   dataSource={turfReservations.filter((res) => !res.isActive)}
@@ -2561,49 +2630,45 @@ const PoolBillingSystem = ({
           {/* Error Display */}
           {editFormErrors.length > 0 && (
             <div
-              style={{
-                backgroundColor: "#fff1f0",
-                border: "1px solid #ffa39e",
-                borderRadius: "4px",
-                padding: "10px",
-                marginBottom: "16px",
-                color: "#cf1322",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
+              style={
+                {
+                  /* existing styles */
+                }
+              }
             >
-              <span style={{ fontSize: "16px" }}>⚠️</span>
-              <div>
-                {editFormErrors.map((error, index) => (
-                  <div key={index}>{error}</div>
-                ))}
-              </div>
+              {editFormErrors.map((error, index) => (
+                <div key={index}>{error}</div>
+              ))}
             </div>
           )}
 
           <Form
             form={editForm}
             onFinish={(values) => {
-              // Round cash and online amounts to integers
               const cash = Math.round(parseFloat(values.cashAmount) || 0);
               const online = Math.round(parseFloat(values.onlineAmount) || 0);
               const total = Math.round(parseFloat(values.totalAmount) || 0);
+              const totalAdvance =
+                editData?.gameType === "Turf"
+                  ? (editData.cashAdvance || 0) + (editData.onlineAdvance || 0)
+                  : 0;
+              const amountPending = total - totalAdvance;
 
               setEditFormErrors([]);
               const errors = [];
-              if (total > 0 && cash === 0 && online === 0) {
+              if (
+                editData?.gameType === "Turf" &&
+                cash + online !== amountPending
+              ) {
+                errors.push("Cash + Online must equal Amount Pending");
+              } else if (total > 0 && cash === 0 && online === 0) {
                 errors.push("Cash or Online must be greater than 0");
               }
-              if (cash + online !== total) {
-                errors.push("Cash + Online must equal Total Amount");
+              if (cash + online > total) {
+                errors.push("Cash + Online cannot exceed Total Amount");
               }
-              if (cash < 0) {
-                errors.push("Cash amount cannot be negative");
-              }
-              if (online < 0) {
-                errors.push("Online amount cannot be negative");
-              }
+              if (cash < 0) errors.push("Cash amount cannot be negative");
+              if (online < 0) errors.push("Online amount cannot be negative");
 
               if (errors.length > 0) {
                 setEditFormErrors(errors);
@@ -2617,6 +2682,7 @@ const PoolBillingSystem = ({
               });
             }}
           >
+            {/* Existing fields */}
             <Form.Item name="name" label="Customer Name">
               <Input />
             </Form.Item>
@@ -2638,6 +2704,7 @@ const PoolBillingSystem = ({
                 disabled
               />
             </Form.Item>
+            {/* Ordered Items */}
             <h3>Ordered Items</h3>
             {Object.entries(
               (editData?.orderedItems || []).reduce((acc, item) => {
@@ -2684,11 +2751,37 @@ const PoolBillingSystem = ({
               <Button type="default">Add Item</Button>
             </Dropdown>
             {editData?.gameType === "Turf" && (
-              <Form.Item name="advancePayment" label="Advance Payment (Rs)">
-                <Input disabled />
-              </Form.Item>
+              <>
+                <Form.Item label="Cash Advance (Rs)">
+                  <Input value={editData.cashAdvance || 0} disabled />
+                </Form.Item>
+                <Form.Item label="Online Advance (Rs)">
+                  <Input value={editData.onlineAdvance || 0} disabled />
+                </Form.Item>
+                <Form.Item label="Total Amount (Rs)">
+                  <Input value={editData.totalAmount || 0} disabled />
+                </Form.Item>
+                <Form.Item label="Amount Pending (Rs)">
+                  <Input
+                    value={
+                      editData.totalAmount -
+                      ((editData.cashAdvance || 0) +
+                        (editData.onlineAdvance || 0))
+                    }
+                    disabled
+                  />
+                </Form.Item>
+              </>
             )}
-            <Form.Item name="totalAmount" label="Total Amount (Rs)">
+            <Form.Item
+              name="totalAmount"
+              label={
+                editData?.gameType === "Turf"
+                  ? "Total Amount (Rs)"
+                  : "Total Amount (Rs)"
+              }
+              hidden={editData?.gameType === "Turf"}
+            >
               <Input disabled />
             </Form.Item>
             <Form.Item
@@ -2737,6 +2830,131 @@ const PoolBillingSystem = ({
               </Button>
             </Form.Item>
           </Form>
+        </Modal>
+
+        <Modal
+          title="Confirm Delete"
+          open={showDeleteConfirmModal}
+          onOk={confirmDelete}
+          onCancel={cancelDelete}
+          okText="Yes"
+          okButtonProps={{ danger: true }}
+          cancelText="No"
+        >
+          <p>
+            Are you sure you want to delete this table? This action cannot be
+            undone.
+          </p>
+        </Modal>
+
+        <Modal
+          title="Add Payment for FOOD Ordered Items"
+          open={isFoodPaymentModalOpen}
+          onCancel={() => {
+            setIsFoodPaymentModalOpen(false);
+            foodPaymentForm.resetFields();
+            setFoodTableId(null);
+            setFormErrors([]); // Reset errors on cancel
+          }}
+          footer={null}
+        >
+          {/* State to hold errors */}
+          {(() => {
+            return (
+              <>
+                {/* Error Display */}
+                {formErrors.length > 0 && (
+                  <div
+                    style={{
+                      backgroundColor: "#fff1f0",
+                      border: "1px solid #ffa39e",
+                      borderRadius: "4px",
+                      padding: "10px",
+                      marginBottom: "16px",
+                      color: "#cf1322",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <span style={{ fontSize: "16px" }}>⚠️</span>
+                    <div>
+                      {formErrors.map((error, index) => (
+                        <div key={index}>{error}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <Form
+                  form={foodPaymentForm}
+                  onFinish={(values) => {
+                    const cash = parseFloat(values.cashAmount) || 0;
+                    const online = parseFloat(values.onlineAmount) || 0;
+                    const total = parseFloat(values.totalPayment) || 0;
+
+                    // Reset errors before validation
+                    setFormErrors([]);
+
+                    // Validation after submission
+                    const errors = [];
+                    if (total > 0 && cash === 0 && online === 0) {
+                      errors.push("Cash or Online must be greater than 0");
+                    }
+                    if (cash + online !== total) {
+                      errors.push("Cash + Online must equal Total Amount");
+                    }
+                    if (cash < 0) {
+                      errors.push("Cash amount cannot be negative");
+                    }
+                    if (online < 0) {
+                      errors.push("Online amount cannot be negative");
+                    }
+
+                    // If there are errors, display them and stop submission
+                    if (errors.length > 0) {
+                      setFormErrors(errors);
+                      return;
+                    }
+
+                    // If validation passes, proceed with submission
+                    handleFoodPaymentSubmit(values);
+                  }}
+                  layout="vertical"
+                >
+                  <Form.Item label="Ordered Items">
+                    <Input value={aggregateItems(dropdownItems)} disabled />
+                  </Form.Item>
+                  <Form.Item name="totalPayment" label="Payment Amount (Rs)">
+                    <Input disabled />
+                  </Form.Item>
+                  <Form.Item
+                    name="onlineAmount"
+                    label="Online Amount (Rs)"
+                    rules={[
+                      { required: true, message: "Please enter online amount" },
+                    ]}
+                  >
+                    <Input type="number" min={0} step="1" />
+                  </Form.Item>
+                  <Form.Item
+                    name="cashAmount"
+                    label="Cash Amount (Rs)"
+                    rules={[
+                      { required: true, message: "Please enter cash amount" },
+                    ]}
+                  >
+                    <Input type="number" min={0} step="1" />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit">
+                      Save Payment
+                    </Button>
+                  </Form.Item>
+                </Form>
+              </>
+            );
+          })()}
         </Modal>
 
         <Modal
