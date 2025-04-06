@@ -1,4 +1,9 @@
-import { MoneyCollectOutlined, SearchOutlined } from "@ant-design/icons";
+import {
+  DeleteOutlined,
+  EditOutlined,
+  MoneyCollectOutlined,
+  SearchOutlined,
+} from "@ant-design/icons";
 import {
   Button,
   Card,
@@ -15,28 +20,28 @@ import {
   Typography,
 } from "antd";
 import {
+  addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
   onSnapshot,
+  query,
   setDoc,
   updateDoc,
-  query,
   where,
-  addDoc,
-  deleteDoc,
 } from "firebase/firestore";
-import { auth } from "./firebase";
 import moment from "moment";
-import "./sales.css";
 import React, { useEffect, useRef, useState } from "react";
-import { db } from "./firebase";
+import { auth, db } from "./firebase";
 import logo1 from "./HOP3.png";
 import logo2 from "./HOP5.png";
 import Navbar from "./Navbar";
 import { getItemPrices } from "./PoolBillingSystem";
-import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import "./sales.css";
+import jsPDF from "jspdf"; // Import jsPDF
+import autoTable from "jspdf-autotable"; // Explicitly import autoTable
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -1079,6 +1084,153 @@ const SalesReport = ({
     }
   };
 
+  const downloadPDF = () => {
+    const doc = new jsPDF({ orientation: "portrait" });
+
+    // Debugging logs
+    console.log("Imported autoTable:", autoTable);
+    if (typeof autoTable !== "function") {
+      console.error(
+        "autoTable is not a function. Check import or installation."
+      );
+      alert("PDF generation failed: autoTable plugin not loaded correctly.");
+      return;
+    }
+
+    // Apply autoTable to the jsPDF instance
+    autoTable(doc, {});
+    console.log("doc.autoTable after apply:", doc.autoTable);
+
+    if (typeof doc.autoTable !== "function") {
+      console.error("doc.autoTable is still not a function after applying.");
+      alert("PDF generation failed: autoTable integration issue.");
+      return;
+    }
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const title =
+      reportType === "daily"
+        ? `Sales Report for ${selectedLocation} - ${moment(selectedDate).format(
+            "MMMM D, YYYY"
+          )}`
+        : `Sales Report for ${selectedLocation} - From ${moment(
+            dateRange[0]
+          ).format("MMMM D, YYYY")} To ${moment(dateRange[1]).format(
+            "MMMM D, YYYY"
+          )}`;
+
+    // Title
+    doc.setFontSize(14);
+    doc.text(title, pageWidth / 2, 10, { align: "center" });
+
+    // Summary Section
+    doc.setFontSize(10);
+    doc.text("Summary", 14, 20);
+    doc.autoTable({
+      startY: 25,
+      head: [["Metric", "Amount"]],
+      body: [
+        ["Cash Revenue", `Rs ${cashRevenue.toFixed(2)}`],
+        ["Online Revenue", `Rs ${onlineRevenue.toFixed(2)}`],
+        ["Balance Received", `Rs ${balanceReceived.toFixed(2)}`],
+        ["Total Revenue", `Rs ${totalRevenue.toFixed(2)}`],
+      ],
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2 },
+      columnStyles: { 0: { cellWidth: 40 }, 1: { cellWidth: 40 } },
+    });
+
+    // Sales by Game Type
+    let yPos = doc.lastAutoTable.finalY + 10;
+    doc.text("Sales by Game Type", 14, yPos);
+    doc.autoTable({
+      startY: yPos + 5,
+      head: [["Game Type", "Count", "Cash (Rs)", "Online (Rs)", "Total (Rs)"]],
+      body: salesByGameType.map((game) => [
+        game.type,
+        game.count,
+        game.cash.toFixed(2),
+        game.online.toFixed(2),
+        game.total.toFixed(2),
+      ]),
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
+      columnStyles: {
+        0: { cellWidth: 30 },
+        1: { cellWidth: 20 },
+        2: { cellWidth: 25 },
+        3: { cellWidth: 25 },
+        4: { cellWidth: 25 },
+      },
+    });
+
+    // Sales by Ordered Items
+    yPos = doc.lastAutoTable.finalY + 10;
+    doc.text("Sales by Ordered Items", 14, yPos);
+    doc.autoTable({
+      startY: yPos + 5,
+      head: [["Item Name", "Qty Sold", "Total (Rs)"]],
+      body: sortedItemSales.map((item) => [
+        item.itemName,
+        item.quantitySold,
+        item.totalRevenue.toFixed(2),
+      ]),
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
+      columnStyles: {
+        0: { cellWidth: 40 },
+        1: { cellWidth: 20 },
+        2: { cellWidth: 30 },
+      },
+    });
+
+    // Regular Customer Dues
+    yPos = doc.lastAutoTable.finalY + 10;
+    doc.text("Regular Customer Dues", 14, yPos);
+    doc.autoTable({
+      startY: yPos + 5,
+      head: [["Name", "Phone", "Total Dues (Rs)", "Today Dues (Rs)"]],
+      body: regularCustomers.map((customer) => [
+        customer.name,
+        customer.phone,
+        customer.dues.toFixed(2),
+        getTodaysDues(customer.name).toFixed(2),
+      ]),
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
+      columnStyles: {
+        0: { cellWidth: 30 },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 25 },
+        3: { cellWidth: 25 },
+      },
+    });
+
+    // Expenses
+    yPos = doc.lastAutoTable.finalY + 10;
+    doc.text("Expenses", 14, yPos);
+    doc.autoTable({
+      startY: yPos + 5,
+      head: [["Expense", "Amount (Rs)"]],
+      body: expenses.map((expense) => [
+        expense.expense,
+        expense.amount.toFixed(2),
+      ]),
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
+      columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 30 } },
+    });
+
+    // Save the PDF
+    const fileName =
+      reportType === "daily"
+        ? `Sales_Report_${selectedLocation}_${selectedDate}.pdf`
+        : `Sales_Report_${selectedLocation}_${moment(dateRange[0]).format(
+            "YYYY-MM-DD"
+          )}_to_${moment(dateRange[1]).format("YYYY-MM-DD")}.pdf`;
+    doc.save(fileName);
+  };
+
   return (
     <div>
       <Navbar
@@ -1127,6 +1279,11 @@ const SalesReport = ({
               />
             </Col>
           )}
+          <Col span={3}>
+            <Button type="primary" onClick={downloadPDF}>
+              Download PDF
+            </Button>
+          </Col>
         </Row>
 
         {loading ? (
