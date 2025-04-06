@@ -86,6 +86,8 @@ const SalesReport = ({
   const [userRole, setUserRole] = useState(null);
   const [isActionAuthenticated, setIsActionAuthenticated] = useState(false);
   const [salesByGameType, setSalesByGameType] = useState([]);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState(null);
 
   const calculateSalesByGameType = (tables) => {
     const gameTypes = {
@@ -101,35 +103,44 @@ const SalesReport = ({
         const gameType = table.gameType || "Other";
         const cash = Math.round(table.cashAmount || 0);
         const online = Math.round(table.onlineAmount || 0);
-        const total = Math.round(table.totalAmount || 0);
+        const totalAmount = Math.round(table.totalAmount || 0);
         const cashAdvance = Math.round(table.cashAdvance || 0);
         const onlineAdvance = Math.round(table.onlineAdvance || 0);
 
+        // Calculate food cost from orderedItems
+        const foodCost = Array.isArray(table.orderedItems)
+          ? table.orderedItems.reduce(
+              (sum, item) => sum + (ITEM_PRICES[item] || 0),
+              0
+            )
+          : 0;
+
+        // Game-only total (excluding food cost)
+        const gameTotal = totalAmount - foodCost;
+
         if (gameType === "Turf") {
-          // Add pending amounts (cashAmount + onlineAmount) to Turf
           gameTypes["Turf"].cash += cash;
           gameTypes["Turf"].online += online;
-          gameTypes["Turf"].total += total - (cashAdvance + onlineAdvance);
-          gameTypes["Turf"].count += 1; // Increment table count for Turf
+          gameTypes["Turf"].total += gameTotal - (cashAdvance + onlineAdvance);
+          gameTypes["Turf"].count += 1;
 
-          // Add advance amounts to TURF ADVANCE
           if (cashAdvance > 0 || onlineAdvance > 0) {
             gameTypes["TURF ADVANCE"].cash += cashAdvance;
             gameTypes["TURF ADVANCE"].online += onlineAdvance;
             gameTypes["TURF ADVANCE"].total += cashAdvance + onlineAdvance;
-            gameTypes["TURF ADVANCE"].count += 1; // Increment table count for TURF ADVANCE
+            gameTypes["TURF ADVANCE"].count += 1;
           }
         } else if (gameType !== "FOOD") {
           gameTypes[gameType].cash += cash;
           gameTypes[gameType].online += online;
-          gameTypes[gameType].total += total;
-          gameTypes[gameType].count += 1; // Increment table count for other game types
+          gameTypes[gameType].total += gameTotal;
+          gameTypes[gameType].count += 1;
         }
       }
     });
 
     return Object.entries(gameTypes)
-      .filter(([, data]) => data.total > 0 || data.count > 0) // Only show types with sales or counts
+      .filter(([, data]) => data.total > 0 || data.count > 0)
       .map(([type, { cash, online, total, count }]) => ({
         type,
         cash,
@@ -284,6 +295,29 @@ const SalesReport = ({
       turf: closedTables.filter((t) => t.gameType === "Turf").length,
     };
     return counts;
+  };
+
+  const handleDeleteCustomer = (customer) => {
+    setCustomerToDelete(customer);
+    setShowDeleteConfirmModal(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!customerToDelete) return;
+    try {
+      const customerRef = doc(db, "regularCustomers", customerToDelete.id);
+      await deleteDoc(customerRef);
+      setShowDeleteConfirmModal(false);
+      setCustomerToDelete(null);
+    } catch (error) {
+      console.error("Error deleting customer:", error);
+      alert("Failed to delete customer: " + error.message);
+    }
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteConfirmModal(false);
+    setCustomerToDelete(null);
   };
 
   const fetchSalesData = async () => {
@@ -530,8 +564,10 @@ const SalesReport = ({
     const newDues = Math.max(0, currentDues - totalPayment);
 
     try {
+      // Update the customer's dues in Firestore
       await updateDoc(customerRef, { dues: newDues });
 
+      // If there’s a payment, record it separately
       if (totalPayment > 0) {
         const paymentRef = doc(collection(db, "payments"));
         await setDoc(paymentRef, {
@@ -545,6 +581,7 @@ const SalesReport = ({
           timestamp: new Date().toISOString(),
         });
 
+        // Update the daily sales report with payment amounts
         const reportDocRef = doc(
           db,
           "dailySalesReports",
@@ -574,6 +611,7 @@ const SalesReport = ({
         };
         await setDoc(reportDocRef, updatedReportData, { merge: true });
 
+        // Update local state with payment amounts
         setTotalRevenue((prev) => prev + totalPayment);
         setCashRevenue((prev) => prev + cashPaymentAmount);
         setOnlineRevenue((prev) => prev + onlinePaymentAmount);
@@ -954,6 +992,23 @@ const SalesReport = ({
           >
             Bill
           </Button>
+          <Button
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => {
+              if (!userRole) {
+                alert("Please log in to perform this action.");
+                return;
+              }
+              if (userRole === "admin" || isActionAuthenticated) {
+                handleDeleteCustomer(record);
+              } else {
+                alert("You do not have permission to perform this action.");
+              }
+            }}
+          >
+            Remove
+          </Button>
         </div>
       ),
     },
@@ -1025,21 +1080,6 @@ const SalesReport = ({
       dataIndex: "totalAmount",
       key: "totalAmount",
       render: (amount) => `Rs ${amount.toFixed(2)}`,
-    },
-  ];
-
-  const tableCountColumns = [
-    {
-      title: "Category",
-      dataIndex: "category",
-      key: "category",
-      sorter: (a, b) => a.category.localeCompare(b.category),
-    },
-    {
-      title: "Closed Tables",
-      dataIndex: "count",
-      key: "count",
-      sorter: (a, b) => a.count - b.count,
     },
   ];
 
@@ -1327,6 +1367,21 @@ const SalesReport = ({
               style={{ borderRadius: "8px", overflow: "hidden" }}
             />
 
+            <Modal
+              title="Confirm Delete"
+              open={showDeleteConfirmModal}
+              onOk={confirmDelete}
+              onCancel={cancelDelete}
+              okText="Yes"
+              okButtonProps={{ danger: true }}
+              cancelText="No"
+            >
+              <p>
+                Are you sure you want to delete this customer? This action
+                cannot be undone.
+              </p>
+            </Modal>
+
             {/* Add Expense Modal */}
             <Modal
               title="Add New Expense"
@@ -1441,18 +1496,24 @@ const SalesReport = ({
             <Form.Item name="phone" label="Phone Number">
               <Input disabled />
             </Form.Item>
-            <Form.Item name="dues" label="Current Dues (Rs)">
-              <Input type="number" min={0} />
+            <Form.Item
+              name="dues"
+              label="Current Dues (Rs)"
+              rules={[
+                { required: true, message: "Please enter the current dues" },
+              ]}
+            >
+              <Input type="number" step="1" />
             </Form.Item>
             <Form.Item name="cashPaymentAmount" label="Cash Payment (Rs)">
-              <Input type="number" min={0} />
+              <Input type="number" min={0} step="1" />
             </Form.Item>
             <Form.Item name="onlinePaymentAmount" label="Online Payment (Rs)">
-              <Input type="number" min={0} />
+              <Input type="number" min={0} step="1" />
             </Form.Item>
             <Form.Item>
               <Button type="primary" htmlType="submit">
-                Update Dues
+                Save Changes
               </Button>
             </Form.Item>
           </Form>
