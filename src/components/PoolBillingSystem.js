@@ -7,8 +7,7 @@ import {
   Modal,
   Table,
   Select,
-  Avatar,
-  List,
+  message,
   Typography,
 } from "antd";
 import { ShoppingCartOutlined } from "@ant-design/icons";
@@ -754,12 +753,6 @@ const PoolBillingSystem = ({
       location: selectedLocation,
       isActive: false,
     };
-    setActiveTables((prevTables) => {
-      const updatedTables = [...prevTables, reservation];
-      saveTables(selectedDate, updatedTables, selectedLocation);
-      return updatedTables;
-    });
-
     await saveTurfReservation(reservation);
     setIsModalOpen(false);
     form.resetFields();
@@ -1448,7 +1441,6 @@ const PoolBillingSystem = ({
 
       // 4. For non-turf tables, sort by active/closed status
       if (!a.isClosed && b.isClosed) return -1; // Active tables before closed
-      if (a.isClosed && !b.isClosed) return 1; // Closed tables after active
       return 0; // Maintain original order if both are active or both are closed
     });
 
@@ -1523,27 +1515,29 @@ const PoolBillingSystem = ({
   const reservationColumns = [
     { title: "Customer Name", dataIndex: "name", key: "name" },
     {
-      title: "Start Time",
-      dataIndex: "startTime",
-      key: "startTime",
-      render: (t) => moment(t).format("DD-MMM-YYYY hh:mm A"), // Simplified format
-    },
-    {
-      title: "End Time",
-      dataIndex: "endTime",
-      key: "endTime",
-      render: (t) => moment(t).format("DD-MMM-YYYY hh:mm A"), // Simplified format
+      title: "Time",
+      key: "timeRange",
+      render: (_, record) => (
+        <span style={{ whiteSpace: "nowrap" }}>
+          {moment(record.startTime).format("DD-MMM-YYYY hh:mm A")} -{" "}
+          {moment(record.endTime).format("DD-MMM-YYYY hh:mm A")}
+        </span>
+      ),
+      align: "center",
     },
     {
       title: "Advance Payment (Rs)",
       dataIndex: "advancePayment",
       key: "advancePayment",
+      render: (_, record) => (
+        <span>{(record.cashAdvance || 0) + (record.onlineAdvance || 0)}</span>
+      ), // Combine cash and online advance for display
     },
     {
       title: "Actions",
       key: "actions",
       render: (_, record) => (
-        <div style={{ display: "flex", gap: "0 px" }}>
+        <div style={{ display: "flex", gap: "8px" }}>
           <Button type="link" onClick={() => editTurfReservation(record)}>
             Edit
           </Button>
@@ -1554,10 +1548,51 @@ const PoolBillingSystem = ({
           >
             Remove
           </Button>
+          <Button
+            type="link"
+            onClick={() => startTurfFromReservation(record)}
+            disabled={record.isActive} // Disable if already active
+          >
+            Start Turf
+          </Button>
         </div>
       ),
     },
   ];
+
+  const startTurfFromReservation = async (reservation) => {
+    const activeTable = {
+      id: reservation.id,
+      table: reservation.table,
+      name: reservation.name,
+      phone: reservation.phone,
+      startTime: reservation.startTime,
+      endTime: reservation.endTime,
+      gameType: reservation.gameType,
+      cashAdvance: reservation.cashAdvance || 0,
+      onlineAdvance: reservation.onlineAdvance || 0,
+      isClosed: false,
+      location: reservation.location,
+      isActive: true,
+      items: [], // Initialize with no items
+    };
+
+    try {
+      setActiveTables((prevTables) => {
+        const updatedTables = [...prevTables, activeTable];
+        saveTables(selectedDate, updatedTables, selectedLocation);
+        return updatedTables;
+      });
+      setTurfReservations((prev) =>
+        prev.filter((res) => res.id !== reservation.id)
+      );
+
+      message.success("Turf started successfully!");
+    } catch (error) {
+      console.error("Error starting turf from reservation:", error);
+      message.error("Failed to start turf. Please try again.");
+    }
+  };
 
   useEffect(() => {
     if (isModalOpen && selectedTable !== "Turf" && !isEditingTurf) {
@@ -2421,6 +2456,12 @@ const PoolBillingSystem = ({
                     >
                       Edit
                     </Button>
+                    <Button
+                      type="primary"
+                      onClick={() => showDropdown("delete", record.id)}
+                    >
+                      Delete
+                    </Button>
                   </div>
                 ) : (
                   <div
@@ -2548,11 +2589,12 @@ const PoolBillingSystem = ({
                   rowKey="id"
                   pagination={false}
                   size="small"
-                  style={{ marginBottom: 16 }}
+                  style={{ marginBottom: 16, width: "100%" }} // Ensure table takes full width
+                  scroll={{ x: 500 }} // Horizontal scroll if content overflows (match modal width)
                 />
                 <Form.Item>
                   <Button type="primary" htmlType="submit">
-                    {isEditingTurf ? "Save Changes" : "Reserve Turf"}
+                    {isEditingTurf ? "Save Changes" : "Start Turf"}
                   </Button>
                 </Form.Item>
               </>
