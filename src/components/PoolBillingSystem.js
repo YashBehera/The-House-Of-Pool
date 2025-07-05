@@ -49,34 +49,45 @@ const LOCATIONS = {
 };
 
 const OLD_HOUSE_CONFIG = {
-  tables: Array.from({ length: 14 }, (_, i) => `Table ${i + 1}`),
-  ps: Array.from({ length: 6 }, (_, i) => `Controller ${i + 1}`),
+  tables: Array.from({ length: 15 }, (_, i) => `Table ${i + 1}`),
+  ps: Array.from({ length: 8 }, (_, i) => `Controller ${i + 1}`),
   tt: ["Table Tennis 1", "Table Tennis 2"],
   turf: ["Turf"],
 };
 
 const OLD_HOUSE_POOL_RATES = {
-  "Table 1": 250,
-  "Table 5": 250,
-  "Table 2": 200,
-  "Table 3": 200,
-  "Table 4": 200,
-  "Table 6": 200,
-  "Table 13": 200,
-  "Table 14": 200,
-  "Table 7": 150,
-  "Table 8": 150,
-  "Table 9": 150,
-  "Table 10": 150,
-  "Table 11": 150,
-  "Table 12": 150,
+  "Table 1": 300,
+  "Table 5": 300,
+  "Table 2": 240,
+  "Table 3": 240,
+  "Table 4": 240,
+  "Table 6": 240,
+  "Table 13": 180,
+  "Table 14": 180,
+  "Table 7": 240,
+  "Table 8": 180,
+  "Table 9": 180,
+  "Table 10": 180,
+  "Table 11": 180,
+  "Table 12": 180,
+  "Table 15": 240,
+  "Table Tennis 1": 200,
+  "Table Tennis 2": 200,
 };
+
+const NEW_HOUSE_POOL_RATES = {
+  "Table 1": 180,
+  "Table 2": 180,
+  "Table 3": 180,
+  "Table 4": 180,
+  "Table 5": 180,
+}
 
 const getTableSize = (table) => {
   const price = OLD_HOUSE_POOL_RATES[table] || 0;
-  if (price === 150) return "Small";
-  if (price === 200) return "Medium";
-  if (price === 250) return "Large";
+  if (price === 180) return "Small";
+  if (price === 240) return "Medium";
+  if (price === 300) return "Large";
   return ""; // Default if price isn’t matched (shouldn’t happen with your data)
 };
 
@@ -340,7 +351,7 @@ const PoolBillingSystem = ({
   }, [setSelectedLocation]);
 
   useEffect(() => {
-    let unsubscribe = () => {};
+    let unsubscribe = () => { };
     if (isAuthenticated) {
       unsubscribe = onSnapshot(
         collection(db, "regularCustomers"),
@@ -509,24 +520,24 @@ const PoolBillingSystem = ({
   const getTablesByDate = (date, location = selectedLocation, callback) => {
     if (!isAuthenticated) {
       callback([]);
-      return () => {};
+      return () => { };
     }
     if (!location) {
       console.error("Location is undefined in getTablesByDate");
       callback([]);
-      return () => {};
+      return () => { };
     }
     const unsubscribe = onSnapshot(
       doc(db, "tables", `${location}_${date}`),
       (docSnap) => {
         let remoteTables = docSnap.exists()
           ? docSnap.data().data.map((table) => ({
-              ...table,
-              startTime: table.startTime
-                ? moment(table.startTime).toDate()
-                : null,
-              endTime: table.endTime ? moment(table.endTime).toDate() : null,
-            }))
+            ...table,
+            startTime: table.startTime
+              ? moment(table.startTime).toDate()
+              : null,
+            endTime: table.endTime ? moment(table.endTime).toDate() : null,
+          }))
           : [];
 
         setActiveTables((prevTables) => {
@@ -617,8 +628,8 @@ const PoolBillingSystem = ({
     const effectiveEndTime = endTime
       ? new Date(endTime)
       : table.endTime
-      ? new Date(table.endTime)
-      : new Date();
+        ? new Date(table.endTime)
+        : new Date();
     const totalMinutes = Math.max(
       Math.round((effectiveEndTime - startTime) / 60000),
       0
@@ -639,14 +650,21 @@ const PoolBillingSystem = ({
     if (table.gameType === "Turf") {
       const turfCost = Math.round((totalMinutes / 60) * TURF_RATE_PER_HOUR);
       totalAmount += turfCost; // Total includes turf cost but not advance in calculation
-    } else if (table.gameType === "Snooker Table") {
+    }
+    else if (table.gameType === "Snooker Table") {
       if (table.location === LOCATIONS.OLD_HOUSE) {
         const hourlyRate = OLD_HOUSE_POOL_RATES[table.table] || 0;
         totalAmount += Math.round((totalMinutes / 60) * hourlyRate);
       } else {
-        totalAmount += Math.round(totalMinutes * POOL_RATE_PER_MIN);
+        const hourlyRate = NEW_HOUSE_POOL_RATES[table.table] || 0;
+        totalAmount += Math.round((totalMinutes / 60) * hourlyRate);
       }
-    } else {
+    }
+    else if (table.gameType === "Table Tennis") {
+      const hourlyRate = OLD_HOUSE_POOL_RATES[table.table] || 0;
+      totalAmount += Math.round((totalMinutes / 60) * hourlyRate);
+    }
+    else {
       totalAmount += Math.round(totalMinutes * POOL_RATE_PER_MIN);
     }
 
@@ -772,12 +790,12 @@ const PoolBillingSystem = ({
       const updatedTables = prevTables.map((t) =>
         t.id === id
           ? {
-              ...t,
-              endTime,
-              totalAmount,
-              duration,
-              durationString,
-            }
+            ...t,
+            endTime,
+            totalAmount,
+            duration,
+            durationString,
+          }
           : t
       );
       saveTables(selectedDate, updatedTables, selectedLocation);
@@ -879,8 +897,8 @@ const PoolBillingSystem = ({
           const itemCount = isFoodRow
             ? dropdownItems.filter((i) => i === item).length
             : tableData.orderedItems
-            ? tableData.orderedItems.filter((i) => i === item).length
-            : 0;
+              ? tableData.orderedItems.filter((i) => i === item).length
+              : 0;
           return (
             <Menu.Item key={item}>
               <div
@@ -1351,7 +1369,7 @@ const PoolBillingSystem = ({
 
       const docRef = doc(db, "Users", user.uid);
       const docSnap = await getDoc(docRef);
-      let adminPassword = "defaultAdminPassword"; // Fallback (set in Firestore ideally)
+      let adminPassword = "defaultAdminPassword";
 
       if (docSnap.exists() && docSnap.data().adminPassword) {
         adminPassword = docSnap.data().adminPassword;
@@ -1360,7 +1378,7 @@ const PoolBillingSystem = ({
       }
 
       if (password === adminPassword) {
-        setIsActionAuthenticated(true);
+        // Only perform the current action, don't set isActionAuthenticated to true
         if (dropdownAction === "edit") {
           const record = activeTables.find((t) => t.id === dropdownRecordId);
           if (record) handleEdit(record);
@@ -1379,7 +1397,7 @@ const PoolBillingSystem = ({
   };
 
   useEffect(() => {
-    let unsubscribe = () => {};
+    let unsubscribe = () => { };
     const loadData = () => {
       setIsLoading(true);
       unsubscribe = getTablesByDate(
@@ -1500,17 +1518,32 @@ const PoolBillingSystem = ({
     "Table 4",
     "Table 5",
     "Table 6",
-    "Table 13",
+    "Table 7",
   ];
   const oldHouseRow2 = [
-    "Table 7",
     "Table 8",
     "Table 9",
     "Table 10",
     "Table 11",
     "Table 12",
+    "Table 13",
     "Table 14",
+    "Table 15",
   ];
+
+  const ps5Row1 = [
+    "Controller 1",
+    "Controller 2",
+    "Controller 3",
+    "Controller 4",
+  ]
+
+  const ps5Row2 = [
+    "Controller 5",
+    "Controller 6",
+    "Controller 7",
+    "Controller 8",
+  ]
 
   const reservationColumns = [
     { title: "Customer Name", dataIndex: "name", key: "name" },
@@ -1918,9 +1951,9 @@ const PoolBillingSystem = ({
                             style={{
                               fontSize: "14px",
                               fontWeight: "bold",
-                              bottom: "127px",
+                              bottom: "210px",
                               position: "relative",
-                              right: "100px",
+                              right: "50px",
                             }}
                           >
                             <p>👤 {activeTable.name}</p>
@@ -2358,8 +2391,8 @@ const PoolBillingSystem = ({
                 record.name === "FOOD"
                   ? "—"
                   : items?.length
-                  ? aggregateItems(items)
-                  : "—",
+                    ? aggregateItems(items)
+                    : "—",
               align: "center",
             },
             {
@@ -2383,8 +2416,8 @@ const PoolBillingSystem = ({
                 const totalOnline =
                   record.gameType === "Turf"
                     ? Math.round(
-                        (onlineAmount || 0) + (record.onlineAdvance || 0)
-                      )
+                      (onlineAmount || 0) + (record.onlineAdvance || 0)
+                    )
                     : Math.round(onlineAmount || 0);
                 return totalOnline;
               },
