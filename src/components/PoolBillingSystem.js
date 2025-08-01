@@ -53,6 +53,7 @@ const OLD_HOUSE_CONFIG = {
   ps: Array.from({ length: 8 }, (_, i) => `Controller ${i + 1}`),
   tt: ["Table Tennis 1", "Table Tennis 2"],
   turf: ["Turf"],
+  turfAdvance: ["Turf Advance"], // Make sure this matches what you use in the code
 };
 
 const OLD_HOUSE_POOL_RATES = {
@@ -647,9 +648,19 @@ const PoolBillingSystem = ({
     );
     let totalAmount = totalItemCost;
 
+    if (table.gameType === "Turf Advance") {
+      // For advance bookings, just return the advance amount
+      return {
+        totalAmount: (table.cashAdvance || 0) + (table.onlineAdvance || 0),
+        duration: table.duration || 0,
+        durationString: table.durationString || "—",
+      };
+    }
+
     if (table.gameType === "Turf") {
       const turfCost = Math.round((totalMinutes / 60) * TURF_RATE_PER_HOUR);
-      totalAmount += turfCost; // Total includes turf cost but not advance in calculation
+      const totalAdvance = (table.cashAdvance || 0) + (table.onlineAdvance || 0);
+      totalAmount += turfCost - totalAdvance; // Subtract advance from total
     }
     else if (table.gameType === "Snooker Table") {
       if (table.location === LOCATIONS.OLD_HOUSE) {
@@ -759,19 +770,38 @@ const PoolBillingSystem = ({
 
     const reservation = {
       id: uuidv4(),
-      table: selectedTable,
+      table: "Turf Advance", // Changed to match OLD_HOUSE_CONFIG
       name: values.name,
       phone: values.phone,
       startTime: startTime.toDate(),
       endTime: endTime.toDate(),
-      cashAdvance, // New field
-      onlineAdvance, // New field
-      gameType: "Turf",
-      isClosed: false,
+      cashAdvance,
+      onlineAdvance,
+      gameType: "Turf Advance", // New game type for advance bookings
+      isClosed: true, // Mark as closed since it's just an advance
       location: selectedLocation,
-      isActive: false,
+      orderedItems: [], // No items for advance
+      totalAmount: cashAdvance + onlineAdvance, // Total advance amount
+      cashAmount: cashAdvance,
+      onlineAmount: onlineAdvance,
+      duration: endTime.diff(startTime, 'minutes'),
+      durationString: `${endTime.diff(startTime, 'hours')} hr ${endTime.diff(startTime, 'minutes') % 60} min`,
+      paymentOption: "Paid",
     };
-    await saveTurfReservation(reservation);
+
+    // Add to active tables
+    setActiveTables((prevTables) => {
+      const updatedTables = [...prevTables, reservation];
+      saveTables(selectedDate, updatedTables, selectedLocation);
+      return updatedTables;
+    });
+
+    // Also save to turf reservations collection
+    await saveTurfReservation({
+      ...reservation,
+      isActive: false // Not active until started
+    });
+
     setIsModalOpen(false);
     form.resetFields();
   };
@@ -1190,10 +1220,17 @@ const PoolBillingSystem = ({
           ? new Date(values.endTime)
           : t.endTime || new Date();
         const updatedOrderedItems = editData.orderedItems || t.orderedItems;
-        const { totalAmount, duration, durationString } = calculateTotalAmount(
-          { ...t, orderedItems: updatedOrderedItems, startTime: newStartTime },
-          newEndTime
-        );
+
+        // For turf, we calculate based on duration
+        const { totalAmount, duration, durationString } = t.gameType === "Turf"
+          ? calculateTotalAmount(
+            { ...t, startTime: newStartTime },
+            newEndTime
+          )
+          : calculateTotalAmount(
+            { ...t, orderedItems: updatedOrderedItems, startTime: newStartTime },
+            newEndTime
+          );
 
         const cashAmount = Math.round(parseFloat(values.cashAmount) || 0);
         const onlineAmount = Math.round(parseFloat(values.onlineAmount) || 0);
@@ -1442,22 +1479,30 @@ const PoolBillingSystem = ({
       if (a.name === "FOOD") return -1;
       if (b.name === "FOOD") return 1;
 
-      // 2. Turf tables (active or closed) come immediately after "FOOD"
+      // 2. Turf Advance reservations come next (before regular Turf)
+      const isATurfAdvance = a.gameType === "Turf Advance";
+      const isBTurfAdvance = b.gameType === "Turf Advance";
+
+      if (isATurfAdvance && !isBTurfAdvance) return -1;
+      if (!isATurfAdvance && isBTurfAdvance) return 1;
+
+      // 3. Regular Turf tables come after Turf Advance
       const isATurf = a.gameType === "Turf";
       const isBTurf = b.gameType === "Turf";
 
       if (isATurf && !isBTurf) return -1; // Turf comes before non-turf
       if (!isATurf && isBTurf) return 1; // Non-turf comes after turf
 
-      // 3. If both are turf or both are not turf, sort by active/closed status
-      if (isATurf && isBTurf) {
-        // Both are turf, maintain order based on isClosed
+      // 4. If both are turf (either advance or regular) or both are not turf, 
+      // sort by active/closed status
+      if ((isATurf || isATurfAdvance) && (isBTurf || isBTurfAdvance)) {
+        // Both are turf-related, maintain order based on isClosed
         if (!a.isClosed && b.isClosed) return -1; // Active turf before closed turf
         if (a.isClosed && !b.isClosed) return 1; // Closed turf after active turf
         return 0; // If both are active or both are closed, maintain original order
       }
 
-      // 4. For non-turf tables, sort by active/closed status
+      // 5. For non-turf tables, sort by active/closed status
       if (!a.isClosed && b.isClosed) return -1; // Active tables before closed
       return 0; // Maintain original order if both are active or both are closed
     });
@@ -1594,33 +1639,55 @@ const PoolBillingSystem = ({
   ];
 
   const startTurfFromReservation = async (reservation) => {
+    // Calculate turf duration and cost
+    const startTime = moment(reservation.startTime);
+    const endTime = moment(reservation.endTime);
+    const durationHours = endTime.diff(startTime, 'hours', true);
+    const turfCost = Math.round(durationHours * TURF_RATE_PER_HOUR);
+
+    // Calculate remaining amount after advance
+    const totalAdvance = (reservation.cashAdvance || 0) + (reservation.onlineAdvance || 0);
+    const remainingAmount = Math.max(0, turfCost - totalAdvance);
+
     const activeTable = {
       id: reservation.id,
-      table: reservation.table,
+      table: "Turf", // Regular turf table when started
       name: reservation.name,
       phone: reservation.phone,
       startTime: reservation.startTime,
       endTime: reservation.endTime,
-      gameType: reservation.gameType,
-      cashAdvance: reservation.cashAdvance || 0,
-      onlineAdvance: reservation.onlineAdvance || 0,
+      gameType: "Turf",
+      cashAdvance: reservation.cashAdvance || 0, // Track advance separately
+      onlineAdvance: reservation.onlineAdvance || 0, // Track advance separately
       isClosed: false,
       location: reservation.location,
       isActive: true,
-      items: [], // Initialize with no items
+      orderedItems: [], // No items initially
+      totalAmount: turfCost,
+      cashAmount: 0, // Main cash payment starts at 0
+      onlineAmount: 0, // Main online payment starts at 0
+      duration: endTime.diff(startTime, 'minutes'),
+      durationString: `${Math.floor(durationHours)} hr ${Math.round((durationHours % 1) * 60)} min`,
+      paymentOption: "Paid",
+      remainingAmount: remainingAmount,
     };
 
     try {
       setActiveTables((prevTables) => {
-        const updatedTables = [...prevTables, activeTable];
+        // Remove any existing table with same ID (if any)
+        const filteredTables = prevTables.filter(t => t.id !== reservation.id);
+        const updatedTables = [...filteredTables, activeTable];
         saveTables(selectedDate, updatedTables, selectedLocation);
         return updatedTables;
       });
-      setTurfReservations((prev) =>
-        prev.filter((res) => res.id !== reservation.id)
-      );
 
-      message.success("Turf started successfully!");
+      // Remove the reservation
+      await deleteDoc(doc(db, "turfReservations", reservation.id));
+      setTurfReservations(prev => prev.filter(res => res.id !== reservation.id));
+
+      message.success(`Turf started successfully! ${remainingAmount > 0 ?
+        `Remaining amount to pay: Rs ${remainingAmount}` :
+        'Full amount paid in advance'}`);
     } catch (error) {
       console.error("Error starting turf from reservation:", error);
       message.error("Failed to start turf. Please try again.");
@@ -2128,7 +2195,7 @@ const PoolBillingSystem = ({
                               (t) => t.table === ground && !t.isClosed
                             )
                               ? "In Use"
-                              : "Start Turf"}
+                              : "Reserve Turf"}
                           </Button>
                           <h3>{ground}</h3>
                           {activeTables
@@ -2402,7 +2469,7 @@ const PoolBillingSystem = ({
               render: (cashAmount, record) => {
                 const totalCash =
                   record.gameType === "Turf"
-                    ? Math.round((cashAmount || 0) + (record.cashAdvance || 0))
+                    ? Math.round((cashAmount || 0))
                     : Math.round(cashAmount || 0);
                 return totalCash;
               },
@@ -2416,8 +2483,7 @@ const PoolBillingSystem = ({
                 const totalOnline =
                   record.gameType === "Turf"
                     ? Math.round(
-                      (onlineAmount || 0) + (record.onlineAdvance || 0)
-                    )
+                      (onlineAmount || 0))
                     : Math.round(onlineAmount || 0);
                 return totalOnline;
               },
@@ -2427,10 +2493,25 @@ const PoolBillingSystem = ({
               title: "Total Amount (Rs)",
               dataIndex: "totalAmount",
               key: "totalAmount",
-              render: (a, record) =>
-                record.isClosed && a ? Math.round(a) : "—",
+              render: (a, record) => {
+                if (!record.isClosed) return "—";
+
+                if (record.gameType === "Turf") {
+                  // For Turf, we need to calculate the final amount including items and advance
+                  const turfCost = Math.round((record.duration / 60) * TURF_RATE_PER_HOUR);
+                  const itemCost = (record.orderedItems || []).reduce(
+                    (sum, item) => sum + ITEM_PRICES[item],
+                    0
+                  );
+                  const totalAdvance = (record.cashAdvance || 0) + (record.onlineAdvance || 0);
+                  const finalAmount = turfCost + itemCost - totalAdvance;
+                  return Math.max(0, finalAmount); // Ensure it's not negative
+                }
+
+                return Math.round(a);
+              },
               align: "center",
-            },
+            }, ,
             {
               title: "Actions",
               key: "actions",
@@ -2457,6 +2538,7 @@ const PoolBillingSystem = ({
                         type="default"
                         onClick={() => {
                           setActiveDropdownTable(record.id);
+                          setDropdownItems([]);
                           console.log("Dropdown opened for:", record.id);
                           console.log(
                             "Current activeDropdownTable:",
@@ -2522,7 +2604,7 @@ const PoolBillingSystem = ({
                         setActiveDropdownTable(visible ? record.id : null)
                       }
                     >
-                      <Button type="default">Add</Button>
+                      <Button type="default" >Add</Button>
                     </Dropdown>
                     <Button
                       type="primary"
@@ -2627,7 +2709,7 @@ const PoolBillingSystem = ({
                 />
                 <Form.Item>
                   <Button type="primary" htmlType="submit">
-                    {isEditingTurf ? "Save Changes" : "Start Turf"}
+                    {isEditingTurf ? "Save Changes" : "Reserve Turf"}
                   </Button>
                 </Form.Item>
               </>
@@ -2722,24 +2804,38 @@ const PoolBillingSystem = ({
             onFinish={(values) => {
               const cash = Math.round(parseFloat(values.cashAmount) || 0);
               const online = Math.round(parseFloat(values.onlineAmount) || 0);
-              const total = Math.round(parseFloat(values.totalAmount) || 0);
-              const totalAdvance =
-                editData?.gameType === "Turf"
-                  ? (editData.cashAdvance || 0) + (editData.onlineAdvance || 0)
-                  : 0;
-              const amountPending = total - totalAdvance;
+
+              // Calculate amounts based on game type
+              let totalAmount, amountPending;
+              if (editData?.gameType === "Turf") {
+                const turfCost = Math.round((editData.duration / 60) * TURF_RATE_PER_HOUR);
+                const itemsCost = (editData.orderedItems || []).reduce(
+                  (sum, item) => sum + ITEM_PRICES[item],
+                  0
+                );
+                const totalAdvance = (editData.cashAdvance || 0) + (editData.onlineAdvance || 0);
+                totalAmount = turfCost + itemsCost;
+                amountPending = Math.max(0, totalAmount - totalAdvance); // Ensure not negative
+              } else {
+                totalAmount = Math.round(parseFloat(values.totalAmount) || 0);
+                amountPending = totalAmount;
+              }
 
               setEditFormErrors([]);
               const errors = [];
-              if (
-                editData?.gameType === "Turf" &&
-                cash + online !== amountPending
-              ) {
-                errors.push("Cash + Online must equal Amount Pending");
-              } else if (total > 0 && cash === 0 && online === 0) {
-                errors.push("Cash or Online must be greater than 0");
+
+              // Validation rules
+              if (editData?.gameType === "Turf") {
+                if (cash + online !== amountPending) {
+                  errors.push(`Cash + Online (${cash + online}) must equal Amount Pending (${amountPending})`);
+                }
+              } else {
+                if (totalAmount > 0 && cash === 0 && online === 0) {
+                  errors.push("Cash or Online must be greater than 0");
+                }
               }
-              if (cash + online > total) {
+
+              if (cash + online > totalAmount) {
                 errors.push("Cash + Online cannot exceed Total Amount");
               }
               if (cash < 0) errors.push("Cash amount cannot be negative");
@@ -2754,6 +2850,7 @@ const PoolBillingSystem = ({
                 ...values,
                 cashAmount: cash,
                 onlineAmount: online,
+                totalAmount: totalAmount,
               });
             }}
           >
@@ -2779,6 +2876,7 @@ const PoolBillingSystem = ({
                 disabled
               />
             </Form.Item>
+
             {/* Ordered Items */}
             <h3>Ordered Items</h3>
             {Object.entries(
@@ -2825,40 +2923,69 @@ const PoolBillingSystem = ({
             <Dropdown overlay={getEditMenu()} trigger={["click"]}>
               <Button type="default">Add Item</Button>
             </Dropdown>
+
+            {/* Turf-specific calculations */}
             {editData?.gameType === "Turf" && (
               <>
-                <Form.Item label="Cash Advance (Rs)">
-                  <Input value={editData.cashAdvance || 0} disabled />
+                <Form.Item label="Turf Cost (Rs)">
+                  <Input
+                    value={Math.round((editData.duration / 60) * TURF_RATE_PER_HOUR)}
+                    disabled
+                  />
                 </Form.Item>
-                <Form.Item label="Online Advance (Rs)">
-                  <Input value={editData.onlineAdvance || 0} disabled />
+                <Form.Item label="Items Cost (Rs)">
+                  <Input
+                    value={(editData.orderedItems || []).reduce(
+                      (sum, item) => sum + ITEM_PRICES[item],
+                      0
+                    )}
+                    disabled
+                  />
                 </Form.Item>
-                <Form.Item label="Total Amount (Rs)">
-                  <Input value={editData.totalAmount || 0} disabled />
+                <Form.Item label="Total Advance (Rs)">
+                  <Input
+                    value={(editData.cashAdvance || 0) + (editData.onlineAdvance || 0)}
+                    disabled
+                  />
+                </Form.Item>
+                <Form.Item label="Gross Amount (Rs)">
+                  <Input
+                    value={
+                      Math.round((editData.duration / 60) * TURF_RATE_PER_HOUR) +
+                      (editData.orderedItems || []).reduce(
+                        (sum, item) => sum + ITEM_PRICES[item],
+                        0
+                      )
+                    }
+                    disabled
+                  />
                 </Form.Item>
                 <Form.Item label="Amount Pending (Rs)">
                   <Input
-                    value={
-                      editData.totalAmount -
-                      ((editData.cashAdvance || 0) +
-                        (editData.onlineAdvance || 0))
-                    }
+                    value={Math.max(0,
+                      Math.round((editData.duration / 60) * TURF_RATE_PER_HOUR) +
+                      (editData.orderedItems || []).reduce(
+                        (sum, item) => sum + ITEM_PRICES[item],
+                        0
+                      ) -
+                      ((editData.cashAdvance || 0) + (editData.onlineAdvance || 0))
+                    )}
                     disabled
                   />
                 </Form.Item>
               </>
             )}
-            <Form.Item
-              name="totalAmount"
-              label={
-                editData?.gameType === "Turf"
-                  ? "Total Amount (Rs)"
-                  : "Total Amount (Rs)"
-              }
-              hidden={editData?.gameType === "Turf"}
-            >
-              <Input disabled />
-            </Form.Item>
+
+            {/* Regular tables total amount */}
+            {editData?.gameType !== "Turf" && (
+              <Form.Item
+                name="totalAmount"
+                label="Total Amount (Rs)"
+              >
+                <Input disabled />
+              </Form.Item>
+            )}
+
             <Form.Item
               name="onlineAmount"
               label="Online Amount (Rs)"
