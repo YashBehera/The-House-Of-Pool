@@ -2,6 +2,7 @@ import {
   EditOutlined,
   ReloadOutlined,
   DeleteOutlined,
+  PlusOutlined,
 } from "@ant-design/icons";
 import { Button, Card, Input, Modal, Table, Tag, Typography } from "antd";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
@@ -30,9 +31,11 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [showRemoveConfirmModal, setShowRemoveConfirmModal] = useState(false);
+  const [showAddStockModal, setShowAddStockModal] = useState(false);
   const [itemToRemove, setItemToRemove] = useState(null);
   const [initialStockInput, setInitialStockInput] = useState({});
   const [updateStockInput, setUpdateStockInput] = useState({});
+  const [addStockInput, setAddStockInput] = useState({});
   const [addItemInput, setAddItemInput] = useState({
     name: "",
     initial: "",
@@ -88,7 +91,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
 
   const saveInitialStock = async () => {
     const newStock = {};
-    Object.keys(DEFAULT_ITEM_PRICES).forEach((item) => {
+    Object.keys(DEFAULT_ITEM_PRICES).sort().forEach((item) => {
       const initialQty = initialStockInput[item] || 0;
       newStock[item] = {
         initial: initialQty,
@@ -142,11 +145,8 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
 
     Object.entries(updateStockInput).forEach(([item, quantity]) => {
       if (updatedStock[item]) {
-        // Update both initial and available stock to the new quantity
         updatedStock[item].initial = Math.max(0, quantity);
         updatedStock[item].available = Math.max(0, quantity);
-        // Optionally reset sold to 0 if you want a full reset of tracking
-        // updatedStock[item].sold = 0; // Uncomment if desired
       }
     });
 
@@ -161,6 +161,38 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
       )
     );
     setShowUpdateStockModal(false);
+  };
+
+  const handleAddStockChange = (item, value) => {
+    setAddStockInput((prev) => ({
+      ...prev,
+      [item]: parseInt(value) || 0,
+    }));
+  };
+
+  const addStock = async () => {
+    const updatedStock = { ...newHouseStock };
+
+    Object.entries(addStockInput).forEach(([item, quantity]) => {
+      if (updatedStock[item]) {
+        const additionalQty = Math.max(0, quantity);
+        updatedStock[item].initial += additionalQty;
+        updatedStock[item].available += additionalQty;
+      }
+    });
+
+    await saveInventory(updatedStock);
+    setNewHouseStock(updatedStock);
+    setInitialStock(
+      Object.fromEntries(
+        Object.entries(updatedStock).map(([item, values]) => [
+          item,
+          values.initial,
+        ])
+      )
+    );
+    setShowAddStockModal(false);
+    setAddStockInput({});
   };
 
   const handleAddItemChange = (field, value) => {
@@ -284,6 +316,17 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
     },
   ];
 
+  // Sort items alphabetically for display
+  const sortedItems = Object.entries(newHouseStock)
+    .map(([item, values]) => ({
+      key: item,
+      item,
+      initial: values.initial,
+      available: values.available,
+      sold: values.sold,
+    }))
+    .sort((a, b) => a.item.localeCompare(b.item));
+
   if (selectedLocation !== "New House Of Pool") return null;
 
   return (
@@ -330,18 +373,22 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
           Add Items
         </Button>
 
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => setShowAddStockModal(true)}
+          style={{
+            ...styles.updateButton,
+            backgroundColor: "#722ed1",
+            borderColor: "#722ed1",
+            margin: "10px",
+          }}
+        >
+          Add Stock
+        </Button>
+
         <Table
-          dataSource={
-            newHouseStock
-              ? Object.entries(newHouseStock).map(([item, values]) => ({
-                  key: item,
-                  item,
-                  initial: values.initial,
-                  available: values.available,
-                  sold: values.sold,
-                }))
-              : []
-          }
+          dataSource={sortedItems}
           columns={columns}
           bordered
           pagination={false}
@@ -380,7 +427,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
             </Button>,
           ]}
         >
-          {Object.keys(DEFAULT_ITEM_PRICES).map((item) => (
+          {Object.keys(DEFAULT_ITEM_PRICES).sort().map((item) => (
             <div key={item} style={styles.modalInput}>
               <label>{item}:</label>
               <Input
@@ -409,7 +456,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
             </Button>,
           ]}
         >
-          {Object.keys(newHouseStock).map((item) => (
+          {Object.keys(newHouseStock).sort().map((item) => (
             <div key={item} style={styles.modalInput}>
               <label>{item}:</label>
               <Input
@@ -418,10 +465,39 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
                 value={
                   updateStockInput[item] !== undefined
                     ? updateStockInput[item]
-                    : newHouseStock[item]?.initial || 0 // Show initial instead of available
+                    : newHouseStock[item]?.initial || 0
                 }
                 onChange={(e) => handleUpdateStockChange(item, e.target.value)}
                 placeholder="Enter new quantity"
+                style={styles.inputField}
+              />
+            </div>
+          ))}
+        </Modal>
+
+        <Modal
+          title="Add Stock to Inventory"
+          open={showAddStockModal}
+          onOk={addStock}
+          onCancel={() => setShowAddStockModal(false)}
+          footer={[
+            <Button key="cancel" onClick={() => setShowAddStockModal(false)}>
+              Cancel
+            </Button>,
+            <Button key="save" type="primary" onClick={addStock}>
+              Add Stock
+            </Button>,
+          ]}
+        >
+          {Object.keys(newHouseStock).sort().map((item) => (
+            <div key={item} style={styles.modalInput}>
+              <label>{item}:</label>
+              <Input
+                type="number"
+                min="0"
+                value={addStockInput[item] || ""}
+                onChange={(e) => handleAddStockChange(item, e.target.value)}
+                placeholder="Enter quantity to add"
                 style={styles.inputField}
               />
             </div>
