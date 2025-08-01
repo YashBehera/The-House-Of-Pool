@@ -94,8 +94,8 @@ const SalesReport = ({
       "Snooker Table": { cash: 0, online: 0, total: 0, count: 0 },
       "Play Station": { cash: 0, online: 0, total: 0, count: 0 },
       "Table Tennis": { cash: 0, online: 0, total: 0, count: 0 },
-      Turf: { cash: 0, online: 0, total: 0, count: 0 },
-      "TURF ADVANCE": { cash: 0, online: 0, total: 0, count: 0 },
+      "Turf": { cash: 0, online: 0, total: 0, count: 0 },
+      "TURF ADVANCE": { cash: 0, online: 0, total: 0, count: 0 }
     };
 
     tables.forEach((table) => {
@@ -104,33 +104,29 @@ const SalesReport = ({
         const cash = Math.round(table.cashAmount || 0);
         const online = Math.round(table.onlineAmount || 0);
         const totalAmount = Math.round(table.totalAmount || 0);
-        const cashAdvance = Math.round(table.cashAdvance || 0);
-        const onlineAdvance = Math.round(table.onlineAdvance || 0);
-
-        // Calculate food cost from orderedItems
         const foodCost = Array.isArray(table.orderedItems)
           ? table.orderedItems.reduce(
-              (sum, item) => sum + (ITEM_PRICES[item] || 0),
-              0
-            )
+            (sum, item) => sum + (ITEM_PRICES[item] || 0),
+            0
+          )
           : 0;
 
-        // Game-only total (excluding food cost)
         const gameTotal = totalAmount - foodCost;
 
-        if (gameType === "Turf") {
+        if (gameType === "Turf Advance") {
+          // **ONLY** track advance payments (ignore cash/online amounts)
+          gameTypes["TURF ADVANCE"].cash += cash;
+          gameTypes["TURF ADVANCE"].online += online;
+          gameTypes["TURF ADVANCE"].total = gameTypes["TURF ADVANCE"].cash + gameTypes["TURF ADVANCE"].online;
+          gameTypes["TURF ADVANCE"].count += 1;
+        } else if (gameType === "Turf") {
+          // For regular Turf, track only non-advance payments
           gameTypes["Turf"].cash += cash;
           gameTypes["Turf"].online += online;
-          gameTypes["Turf"].total += gameTotal - (cashAdvance + onlineAdvance);
+          gameTypes["Turf"].total += cash + online - foodCost;
           gameTypes["Turf"].count += 1;
-
-          if (cashAdvance > 0 || onlineAdvance > 0) {
-            gameTypes["TURF ADVANCE"].cash += cashAdvance;
-            gameTypes["TURF ADVANCE"].online += onlineAdvance;
-            gameTypes["TURF ADVANCE"].total += cashAdvance + onlineAdvance;
-            gameTypes["TURF ADVANCE"].count += 1;
-          }
         } else if (gameType !== "FOOD") {
+          // Normal game types (Snooker, PS, Table Tennis)
           gameTypes[gameType].cash += cash;
           gameTypes[gameType].online += online;
           gameTypes[gameType].total += gameTotal;
@@ -364,15 +360,14 @@ const SalesReport = ({
           tables.reduce(
             (sum, entry) =>
               sum +
-              (Number(entry.cashAmount || 0) + Number(entry.cashAdvance || 0)),
+              (Number(entry.cashAmount || 0)),
             0
           ) + paymentCashRevenue;
         onlineRevenue =
           tables.reduce(
             (sum, entry) =>
               sum +
-              (Number(entry.onlineAmount || 0) +
-                Number(entry.onlineAdvance || 0)),
+              (Number(entry.onlineAmount || 0)),
             0
           ) + paymentOnlineRevenue;
         balanceReceived = paymentTotalRevenue;
@@ -504,9 +499,9 @@ const SalesReport = ({
 
     const foodItemsRevenue = foodRow
       ? foodRow.orderedItems.reduce(
-          (sum, item) => sum + (ITEM_PRICES[item] || 0),
-          0
-        )
+        (sum, item) => sum + (ITEM_PRICES[item] || 0),
+        0
+      )
       : 0;
     const foodPaymentsRevenue = foodRow
       ? (foodRow.cashAmount || 0) + (foodRow.onlineAmount || 0)
@@ -591,13 +586,13 @@ const SalesReport = ({
         const existingData = reportSnap.exists()
           ? reportSnap.data()
           : {
-              totalRevenue: 0,
-              cashRevenue: 0,
-              onlineRevenue: 0,
-              balanceReceived: 0,
-              salesByGameType: {},
-              salesByItems: {},
-            };
+            totalRevenue: 0,
+            cashRevenue: 0,
+            onlineRevenue: 0,
+            balanceReceived: 0,
+            salesByGameType: {},
+            salesByItems: {},
+          };
 
         const updatedReportData = {
           totalRevenue: (existingData.totalRevenue || 0) + totalPayment,
@@ -631,7 +626,7 @@ const SalesReport = ({
       reportType === "daily"
         ? [selectedDate]
         : dateRange.length === 2
-        ? (() => {
+          ? (() => {
             const [start, end] = dateRange;
             const days = [];
             for (
@@ -643,7 +638,7 @@ const SalesReport = ({
             }
             return days;
           })()
-        : [];
+          : [];
     for (const date of dates) {
       const tables = await getTablesByDate(date, selectedLocation);
       const customerTables = tables.filter(
@@ -883,26 +878,16 @@ const SalesReport = ({
       dataIndex: "type",
       key: "type",
       sorter: (a, b) => a.type.localeCompare(b.type),
+      render: (type) => {
+        if (type === "TURF ADVANCE") return "Turf Advance";
+        return type;
+      }
     },
     {
       title: "Table Count 📋",
       dataIndex: "count",
       key: "count",
       sorter: (a, b) => a.count - b.count,
-    },
-    {
-      title: "Cash (Rs)",
-      dataIndex: "cash",
-      key: "cash",
-      sorter: (a, b) => a.cash - b.cash,
-      render: (cash) => `Rs ${cash.toFixed(2)}`,
-    },
-    {
-      title: "Online (Rs)",
-      dataIndex: "online",
-      key: "online",
-      sorter: (a, b) => a.online - b.online,
-      render: (online) => `Rs ${online.toFixed(2)}`,
     },
     {
       title: "Total Sales (Rs) 💰",
@@ -1141,10 +1126,10 @@ const SalesReport = ({
           {reportType === "daily"
             ? `${moment(selectedDate).format("MMMM D, YYYY")}`
             : reportType === "custom" && dateRange.length === 2
-            ? `From ${moment(dateRange[0]).format("MMMM D, YYYY")} To ${moment(
+              ? `From ${moment(dateRange[0]).format("MMMM D, YYYY")} To ${moment(
                 dateRange[1]
               ).format("MMMM D, YYYY")}`
-            : ""}
+              : ""}
         </Title>
 
         <Row gutter={16} style={{ marginBottom: 20 }}>
@@ -1282,26 +1267,7 @@ const SalesReport = ({
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={1}>
                     <strong>
-                      {salesByGameType.reduce(
-                        (sum, game) => sum + game.count,
-                        0
-                      )}
-                    </strong>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={2}>
-                    <strong>
-                      Rs{" "}
-                      {salesByGameType
-                        .reduce((sum, game) => sum + game.cash, 0)
-                        .toFixed(2)}
-                    </strong>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={3}>
-                    <strong>
-                      Rs{" "}
-                      {salesByGameType
-                        .reduce((sum, game) => sum + game.online, 0)
-                        .toFixed(2)}
+                      {salesByGameType.reduce((sum, game) => sum + game.count, 0)}
                     </strong>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={4}>
