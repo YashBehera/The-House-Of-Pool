@@ -305,7 +305,7 @@ const Queue = ({
       gameType: values.appointmentOption.includes("Table")
         ? "Snooker Table"
         : values.appointmentOption.includes("Controller")
-        ? "PS"
+        ? "Play Station"
         : "Table Tennis",
       isClosed: false,
       location: selectedLocation,
