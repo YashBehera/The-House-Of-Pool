@@ -82,7 +82,11 @@ const NEW_HOUSE_POOL_RATES = {
   "Table 3": 180,
   "Table 4": 180,
   "Table 5": 180,
-}
+  "Table 6": 180, // Small
+  "Table 7": 240, // Medium
+  "Table 8": 180, // Small
+  "Table 9": 240, // Medium
+};
 
 const getTableSize = (table) => {
   const price = OLD_HOUSE_POOL_RATES[table] || 0;
@@ -93,8 +97,8 @@ const getTableSize = (table) => {
 };
 
 const NEW_HOUSE_CONFIG = {
-  tables: Array.from({ length: 5 }, (_, i) => `Table ${i + 1}`),
-  ps: [],
+  tables: Array.from({ length: 9 }, (_, i) => `Table ${i + 1}`),
+  ps: Array.from({ length: 8 }, (_, i) => `Controller ${i + 1}`),
   tt: [],
   turf: [],
 };
@@ -2240,6 +2244,8 @@ const PoolBillingSystem = ({
                 >
                   Add Regular Customer
                 </Button>
+
+                {/* Ground Floor Section */}
                 <h1
                   style={{
                     margin: "0",
@@ -2248,7 +2254,7 @@ const PoolBillingSystem = ({
                   }}
                   className="flex text-4xl font-bold relative top-7"
                 >
-                  8 Ball Pool
+                  1st Floor
                 </h1>
                 <div
                   style={{
@@ -2256,9 +2262,10 @@ const PoolBillingSystem = ({
                     gap: "20px",
                     justifyContent: "center",
                     flexWrap: "wrap",
+                    marginBottom: "40px"
                   }}
                 >
-                  {config.tables.map((table) => (
+                  {config.tables.slice(0, 5).map((table) => (
                     <div
                       key={table}
                       style={{
@@ -2286,10 +2293,10 @@ const PoolBillingSystem = ({
                             (t) => t.table === table && !t.isClosed
                           );
                           if (activeTable) {
-                            handleEdit(activeTable); // Open edit modal for active table
+                            handleEdit(activeTable);
                           } else {
                             setSelectedTable(table);
-                            setIsModalOpen(true); // Open start modal for inactive table
+                            setIsModalOpen(true);
                           }
                         }}
                         style={{
@@ -2331,6 +2338,214 @@ const PoolBillingSystem = ({
                               fontWeight: "bold",
                               bottom: "200px",
                               position: "relative",
+                            }}
+                          >
+                            <p>👤 {activeTable.name}</p>
+                            <p>📞 {activeTable.phone}</p>
+                          </div>
+                        ))}
+                    </div>
+                  ))}
+                </div>
+
+                {/* New Floor Section */}
+                <h1
+                  style={{
+                    margin: "0",
+                    display: "flex",
+                    justifyContent: "center",
+                  }}
+                  className="flex text-4xl font-bold relative top-7"
+                >
+                  2nd Floor
+                </h1>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "20px",
+                    justifyContent: "center",
+                    flexWrap: "wrap",
+                    marginBottom: "40px"
+                  }}
+                >
+                  {config.tables.slice(5, 9).map((table) => (
+                    <div
+                      key={table}
+                      style={{
+                        position: "relative",
+                        textAlign: "center",
+                        width: "250px",
+                        height: "250px",
+                      }}
+                    >
+                      <img
+                        src={pool}
+                        alt={table}
+                        style={{
+                          width: "250px",
+                          height: "250px",
+                          borderRadius: "5px",
+                          margin: 0,
+                          padding: 0,
+                        }}
+                      />
+                      <Button
+                        type="primary"
+                        onClick={() => {
+                          const activeTable = sortedTables.find(
+                            (t) => t.table === table && !t.isClosed
+                          );
+                          if (activeTable) {
+                            handleEdit(activeTable);
+                          } else {
+                            setSelectedTable(table);
+                            setIsModalOpen(true);
+                          }
+                        }}
+                        style={{
+                          backgroundColor: activeTables.some(
+                            (t) => t.table === table && !t.isClosed
+                          )
+                            ? "red"
+                            : "rgb(0, 89, 255)",
+                          marginTop: "10px",
+                          cursor: activeTables.some(
+                            (t) => t.table === table && !t.isClosed
+                          )
+                            ? "not-allowed"
+                            : "pointer",
+                          bottom: activeTables.some(
+                            (t) => t.table === table && !t.isClosed
+                          )
+                            ? "180px"
+                            : "150px",
+                          color: "white",
+                        }}
+                      >
+                        {activeTables.some(
+                          (t) => t.table === table && !t.isClosed
+                        )
+                          ? "In Use"
+                          : "Start Table"}
+                      </Button>
+                      <h3 style={{ position: "relative", bottom: "80px" }}>
+                        {table}
+                      </h3>
+                      {/* Show size clearly for these new tables */}
+                      <p
+                        style={{
+                          position: "relative",
+                          bottom: "70px",
+                          fontSize: "14px",
+                          color: "#666",
+                          margin: 0,
+                        }}
+                      >
+                        {NEW_HOUSE_POOL_RATES[table] === 180 ? "Small" : "Medium"}
+                      </p>
+
+                      {activeTables
+                        .filter((t) => t.table === table && !t.isClosed)
+                        .map((activeTable) => (
+                          <div
+                            key={activeTable.id}
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: "bold",
+                              bottom: "200px",
+                              position: "relative",
+                            }}
+                          >
+                            <p>👤 {activeTable.name}</p>
+                            <p>📞 {activeTable.phone}</p>
+                          </div>
+                        ))}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Play Station Section - Header removed to group with New Floor */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "20px",
+                    justifyContent: "flex-start", // Start from left
+                    flexWrap: "nowrap", // Ensure single line
+                    overflowX: "auto", // Allow scrolling if needed
+                    paddingBottom: "10px", // Add padding for scrollbar
+                    width: "100%", // Full width
+                    paddingLeft: "20px",
+                  }}
+                >
+                  {config.ps.map((controller) => (
+                    <div
+                      key={controller}
+                      style={{
+                        position: "relative",
+                        textAlign: "center",
+                        width: "220px",
+                        height: "210px",
+                      }}
+                    >
+                      <img
+                        src={ps5}
+                        alt={controller}
+                        style={{
+                          width: "200px",
+                          height: "150px",
+                          borderRadius: "5px",
+                          margin: 0,
+                          padding: 0,
+                        }}
+                      />
+                      <Button
+                        type="primary"
+                        onClick={() => {
+                          const activeTable = sortedTables.find(
+                            (t) => t.table === controller && !t.isClosed
+                          );
+                          if (activeTable) {
+                            handleEdit(activeTable);
+                          } else {
+                            setSelectedTable(controller);
+                            setIsModalOpen(true);
+                          }
+                        }}
+                        style={{
+                          backgroundColor: activeTables.some(
+                            (t) => t.table === controller && !t.isClosed
+                          )
+                            ? "red"
+                            : "rgba(0, 89, 255, 0.93)",
+                          marginTop: "10px",
+                          cursor: activeTables.some(
+                            (t) => t.table === controller && !t.isClosed
+                          )
+                            ? "not-allowed"
+                            : "pointer",
+                          color: "white",
+                        }}
+                      >
+                        {activeTables.some(
+                          (t) => t.table === controller && !t.isClosed
+                        )
+                          ? "In Use"
+                          : "Start ᕈᔑ𝟻"}
+                      </Button>
+                      <h3 style={{ position: "relative", top: "10px" }}>
+                        {controller}
+                      </h3>
+                      {activeTables
+                        .filter((t) => t.table === controller && !t.isClosed)
+                        .map((activeTable) => (
+                          <div
+                            key={activeTable.id}
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: "bold",
+                              bottom: "210px",
+                              position: "relative",
+                              right: "50px",
                             }}
                           >
                             <p>👤 {activeTable.name}</p>
@@ -2391,11 +2606,15 @@ const PoolBillingSystem = ({
               title: "Size",
               key: "size",
               render: (_, record) => {
-                const tableSize =
-                  record.location === LOCATIONS.OLD_HOUSE
-                    ? getTableSize(record.table)
-                    : ""; // No size for New House tables unless defined
-                return tableSize || "-"; // Display "-" if no size
+                let tableSize = "";
+                if (record.location === LOCATIONS.OLD_HOUSE) {
+                  tableSize = getTableSize(record.table);
+                } else if (record.location === LOCATIONS.NEW_HOUSE) {
+                  const price = NEW_HOUSE_POOL_RATES[record.table];
+                  if (price === 180) tableSize = "Small";
+                  else if (price === 240) tableSize = "Medium";
+                }
+                return tableSize || "-";
               },
               align: "center",
             },
