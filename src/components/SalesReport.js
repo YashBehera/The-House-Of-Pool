@@ -62,7 +62,7 @@ const SalesReport = ({
   const [isShowTablesModalOpen, setIsShowTablesModalOpen] = useState(false);
   const [selectedCustomerTables, setSelectedCustomerTables] = useState([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
   const [loginForm] = Form.useForm();
   const dropdownRef = useRef(null);
   const [dropdownActionCustomer, setDropdownActionCustomer] = useState(null);
@@ -146,17 +146,11 @@ const SalesReport = ({
       }));
   };
 
-  const [tableCounts, setTableCounts] = useState({
-    total: 0,
-    snooker: 0,
-    ps: 0,
-    tableTennis: 0,
-    turf: 0,
-  });
+
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
-      setIsAuthenticated(!!user);
+
       if (user) {
         const docRef = doc(db, "Users", user.uid);
         try {
@@ -279,19 +273,7 @@ const SalesReport = ({
     }));
   };
 
-  const calculateTableCounts = (tables) => {
-    const closedTables = tables.filter((table) => table.isClosed);
-    const counts = {
-      total: closedTables.length,
-      snooker: closedTables.filter((t) => t.gameType === "Snooker Table")
-        .length,
-      ps: closedTables.filter((t) => t.gameType === "Play Station").length,
-      tableTennis: closedTables.filter((t) => t.gameType === "Table Tennis")
-        .length,
-      turf: closedTables.filter((t) => t.gameType === "Turf").length,
-    };
-    return counts;
-  };
+
 
   const handleDeleteCustomer = (customer) => {
     setCustomerToDelete(customer);
@@ -396,7 +378,7 @@ const SalesReport = ({
         setCashRevenue(cashRevenue);
         setOnlineRevenue(onlineRevenue);
         setBalanceReceived(balanceReceived);
-        setTableCounts(calculateTableCounts(tables));
+
       } else if (reportType === "custom" && dateRange.length === 2) {
         const [start, end] = dateRange;
         const startDate = moment(start).startOf("day");
@@ -470,7 +452,7 @@ const SalesReport = ({
         setCashRevenue(cashRevenue);
         setOnlineRevenue(onlineRevenue);
         setBalanceReceived(balanceReceived);
-        setTableCounts(calculateTableCounts(tables));
+
       }
     } catch (error) {
       console.error("Error fetching sales data:", error);
@@ -528,12 +510,13 @@ const SalesReport = ({
     setBalanceReceived(newBalanceReceived);
 
     // Calculate and set table counts for daily report
-    setTableCounts(calculateTableCounts(activeTables));
+    // setTableCounts(calculateTableCounts(activeTables));
   }, [activeTables, ITEM_PRICES, reportType]);
 
   useEffect(() => {
     if (Object.keys(ITEM_PRICES).length === 0) return;
     fetchSalesData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLocation, reportType, selectedDate, dateRange, ITEM_PRICES]);
 
   const handleEditCustomer = (customer) => {
@@ -692,29 +675,7 @@ const SalesReport = ({
     );
   }
 
-  const sortedGameSales = Object.entries(
-    activeTables.reduce((acc, entry) => {
-      const { gameType, totalAmount, paymentOption, orderedItems } = entry;
-      if (
-        !gameType ||
-        totalAmount === undefined ||
-        gameType === "FOOD" ||
-        !entry.isClosed ||
-        paymentOption !== "Paid"
-      )
-        return acc;
-      const itemCost = orderedItems.reduce(
-        (sum, item) => sum + (ITEM_PRICES[item] || 0),
-        0
-      );
-      const gameRevenue = Number(totalAmount) - itemCost;
-      acc[gameType] =
-        (acc[gameType] || 0) + (gameRevenue > 0 ? gameRevenue : 0);
-      return acc;
-    }, {})
-  )
-    .map(([game, total]) => ({ gameType: game, totalSales: total }))
-    .sort((a, b) => b.totalSales - a.totalSales);
+
 
   const sortedItemSales = Object.entries(
     activeTables.reduce((acc, entry) => {
@@ -738,9 +699,7 @@ const SalesReport = ({
   const filteredItems = sortedItemSales.filter(({ itemName }) =>
     itemName.toLowerCase().includes(searchText.toLowerCase())
   );
-  const filteredGames = sortedGameSales.filter(({ gameType }) =>
-    gameType.toLowerCase().includes(searchText.toLowerCase())
-  );
+
   const filteredCustomers = regularCustomers.filter(({ name }) =>
     name.toLowerCase().includes(searchText.toLowerCase())
   );
@@ -751,10 +710,7 @@ const SalesReport = ({
       .reduce((sum, table) => sum + (table.dues || 0), 0);
   };
 
-  const totalGameSales = filteredGames.reduce(
-    (sum, game) => sum + game.totalSales,
-    0
-  );
+
   const totalItemSales = filteredItems.reduce(
     (sum, item) => sum + item.totalRevenue,
     0

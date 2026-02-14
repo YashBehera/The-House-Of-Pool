@@ -2,14 +2,14 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import React, { useState } from "react";
 import { auth } from "./firebase";
 import { toast } from "react-toastify";
-import Register from "./Register";
+
 import Profile from "./Profile";
 
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showRegister, setShowRegister] = useState(false);
+
   const [showProfile, setShowProfile] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -30,19 +30,11 @@ function Login() {
     }
   };
 
-  const handleRegisterClick = () => {
-    setShowRegister(true);
-    auth.signOut();
-    setShowProfile(false);
-  };
+
 
   return (
     <>
-      {showRegister ? (
-        <div>
-          <Register />
-        </div>
-      ) : showProfile ? (
+      {showProfile ? (
         <div>
           <Profile />
         </div>
@@ -56,7 +48,7 @@ function Login() {
               <h3 className="font-semibold text-lg mt-0">Login</h3>
 
               <div className="mb-1 gap-0 text-sm">
-                <label className="text-base font-medium">Email address</label><br/>
+                <label className="text-base font-medium">Email address</label><br />
                 <input
                   type="email"
                   className="form-control border-2 border-solid rounded-lg px-1 w-48 focus:outline-none"
@@ -68,7 +60,7 @@ function Login() {
               </div>
 
               <div className="mb-1 gap-0 text-sm">
-                <label className="text-base font-medium">Password</label><br/>
+                <label className="text-base font-medium">Password</label><br />
                 <input
                   type="password"
                   className="form-control border-2 border-solid rounded-lg px-1 w-48 focus:outline-none"
@@ -86,7 +78,7 @@ function Login() {
                   </span>
                 </div>
               </button>
-{/*               <p className="forgot-password text-right text-xs mt-1">
+              {/*               <p className="forgot-password text-right text-xs mt-1">
                 New Register?{" "}
                 <button
                   type="button"

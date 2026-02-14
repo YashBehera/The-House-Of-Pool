@@ -10,7 +10,7 @@ import moment from "moment";
 import React, { useEffect, useState } from "react";
 import { db } from "./firebase";
 import Navbar from "./Navbar";
-import { getItemPrices } from "./PoolBillingSystem";
+
 
 const { Title } = Typography;
 
@@ -25,7 +25,7 @@ const DEFAULT_ITEM_PRICES = {
 
 const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
   const [newHouseStock, setNewHouseStock] = useState({});
-  const [initialStock, setInitialStock] = useState({});
+
   const [showInitialStockModal, setShowInitialStockModal] = useState(false);
   const [showUpdateStockModal, setShowUpdateStockModal] = useState(false);
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
@@ -41,7 +41,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
     initial: "",
     price: "",
   });
-  const [prevOrders, setPrevOrders] = useState({});
+
   const [selectedDate, setSelectedDate] = useState(
     moment().format("YYYY-MM-DD")
   );
@@ -71,7 +71,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
               price: values.price || DEFAULT_ITEM_PRICES[item] || 0,
             };
           });
-          setInitialStock(initial);
+
           setNewHouseStock(current);
         }
       },
@@ -103,11 +103,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
 
     await saveInventory(newStock);
     setNewHouseStock(newStock);
-    setInitialStock(
-      Object.fromEntries(
-        Object.entries(newStock).map(([item, values]) => [item, values.initial])
-      )
-    );
+
     setShowInitialStockModal(false);
   };
 
@@ -122,8 +118,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
   const confirmReset = () => {
     console.log("Reset confirmed, clearing newHouseStock");
     setNewHouseStock({});
-    setInitialStock({});
-    setPrevOrders({});
+
     setShowInitialStockModal(true);
     setShowResetConfirmModal(false);
   };
@@ -152,14 +147,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
 
     await saveInventory(updatedStock);
     setNewHouseStock(updatedStock);
-    setInitialStock(
-      Object.fromEntries(
-        Object.entries(updatedStock).map(([item, values]) => [
-          item,
-          values.initial,
-        ])
-      )
-    );
+
     setShowUpdateStockModal(false);
   };
 
@@ -183,14 +171,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
 
     await saveInventory(updatedStock);
     setNewHouseStock(updatedStock);
-    setInitialStock(
-      Object.fromEntries(
-        Object.entries(updatedStock).map(([item, values]) => [
-          item,
-          values.initial,
-        ])
-      )
-    );
+
     setShowAddStockModal(false);
     setAddStockInput({});
   };
@@ -222,10 +203,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
 
     await saveInventory(updatedStock);
     setNewHouseStock(updatedStock);
-    setInitialStock((prev) => ({
-      ...prev,
-      [name]: initialQty,
-    }));
+
     setShowAddItemModal(false);
     setAddItemInput({ name: "", initial: "", price: "" });
   };
@@ -241,11 +219,7 @@ const NewInventory = ({ selectedLocation, setSelectedLocation }) => {
     delete updatedStock[itemToRemove];
     await saveInventory(updatedStock);
     setNewHouseStock(updatedStock);
-    setInitialStock((prev) => {
-      const newInitial = { ...prev };
-      delete newInitial[itemToRemove];
-      return newInitial;
-    });
+
     setShowRemoveConfirmModal(false);
     setItemToRemove(null);
   };

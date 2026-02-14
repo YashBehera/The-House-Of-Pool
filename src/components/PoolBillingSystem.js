@@ -22,7 +22,7 @@ import {
   updateDoc,
   query,
   where,
-  limit,
+
   orderBy,
   deleteDoc,
 } from "firebase/firestore";
@@ -200,6 +200,7 @@ const PoolBillingSystem = ({
       setMonthlyTableCount(count);
     };
     fetchCount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, selectedLocation, isAuthenticated]);
 
   const handleViewFoodItems = (record) => {
@@ -288,6 +289,7 @@ const PoolBillingSystem = ({
 
   useEffect(() => {
     fetchTurfReservations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLocation, isAuthenticated]);
 
   const removeTurfReservation = async (reservationId) => {
@@ -1374,6 +1376,7 @@ const PoolBillingSystem = ({
     }, timeUntilMidnight);
 
     return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLocation]);
 
   const showDropdown = (action, id) => {
@@ -1474,6 +1477,7 @@ const PoolBillingSystem = ({
       setIsLoading(false);
     }
     return () => unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, selectedLocation, isAuthenticated]);
 
   const sortedTables = [...activeTables]
@@ -1553,6 +1557,7 @@ const PoolBillingSystem = ({
       const { totalAmount } = calculateTotalAmount(editData, editData.endTime);
       editForm.setFieldsValue({ totalAmount });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editData, isEditModalOpen]);
 
   const config =
@@ -1580,19 +1585,7 @@ const PoolBillingSystem = ({
     "Table 15",
   ];
 
-  const ps5Row1 = [
-    "Controller 1",
-    "Controller 2",
-    "Controller 3",
-    "Controller 4",
-  ]
 
-  const ps5Row2 = [
-    "Controller 5",
-    "Controller 6",
-    "Controller 7",
-    "Controller 8",
-  ]
 
   const reservationColumns = [
     { title: "Customer Name", dataIndex: "name", key: "name" },
@@ -1704,6 +1697,7 @@ const PoolBillingSystem = ({
         startTime: moment().format("HH:mm"), // Set to current time
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isModalOpen, selectedTable, form]);
 
   return (
@@ -2730,7 +2724,7 @@ const PoolBillingSystem = ({
                 return Math.round(a);
               },
               align: "center",
-            }, ,
+            },
             {
               title: "Actions",
               key: "actions",
