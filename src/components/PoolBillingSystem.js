@@ -22,7 +22,6 @@ import {
   updateDoc,
   query,
   where,
-  limit,
   orderBy,
   deleteDoc,
 } from "firebase/firestore";
@@ -1580,19 +1579,7 @@ const PoolBillingSystem = ({
     "Table 15",
   ];
 
-  const ps5Row1 = [
-    "Controller 1",
-    "Controller 2",
-    "Controller 3",
-    "Controller 4",
-  ]
 
-  const ps5Row2 = [
-    "Controller 5",
-    "Controller 6",
-    "Controller 7",
-    "Controller 8",
-  ]
 
   const reservationColumns = [
     { title: "Customer Name", dataIndex: "name", key: "name" },
@@ -2730,7 +2717,7 @@ const PoolBillingSystem = ({
                 return Math.round(a);
               },
               align: "center",
-            }, ,
+            },
             {
               title: "Actions",
               key: "actions",
